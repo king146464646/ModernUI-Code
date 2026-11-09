@@ -21,19 +21,24 @@ package icyllis.modernui.graphics.text;
 import com.ibm.icu.text.BreakIterator;
 import icyllis.modernui.annotation.NonNull;
 import icyllis.modernui.annotation.Nullable;
+import icyllis.modernui.graphics.Canvas;
+import icyllis.modernui.graphics.Image;
+import icyllis.modernui.graphics.Paint;
 import icyllis.modernui.graphics.Rect;
 import it.unimi.dsi.fastutil.floats.FloatArrayList;
+import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
 import it.unimi.dsi.fastutil.ints.IntSet;
 import it.unimi.dsi.fastutil.objects.Object2IntMap;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.function.Function;
 
 /**
  * Special font for Color Emoji.
  */
-//TODO the layout code is not correct, add rendering
+//TODO the layout code is not correct
 public final class EmojiFont implements Font {
 
     private static final BreakIterator sBreaker = BreakIterator.getCharacterInstance(Locale.ROOT);
@@ -51,10 +56,16 @@ public final class EmojiFont implements Font {
     // glyph ID to res name, /assets/modernui/emoji/[res name], 0-based
     private final List<String> mFiles;
 
+    // loads the emoji PNG as an image, lazily called on UI thread; may be null
+    @Nullable
+    private final Function<String, Image> mImageLoader;
+    private final Int2ObjectOpenHashMap<Image> mGlyphImages = new Int2ObjectOpenHashMap<>();
+
     private final CharSequenceBuilder mLookupKey = new CharSequenceBuilder();
 
     public EmojiFont(String name, IntSet coverage, int size, int ascent, int spacing,
-                     int base, Object2IntMap<CharSequence> map, List<String> files) {
+                     int base, Object2IntMap<CharSequence> map, List<String> files,
+                     @Nullable Function<String, Image> imageLoader) {
         mName = name;
         mCoverage = coverage;
         mBaseSize = (float) size / base;
@@ -63,6 +74,7 @@ public final class EmojiFont implements Font {
         mBaseSpacing = (float) spacing / base;
         mMap = map;
         mFiles = files;
+        mImageLoader = imageLoader;
     }
 
     public String getFileName(int glyphId) {
@@ -228,6 +240,50 @@ public final class EmojiFont implements Font {
         }
 
         return currAdvance;
+    }
+
+    @Override
+    public boolean hasRasterGlyphs() {
+        return mImageLoader != null;
+    }
+
+    @Override
+    public void drawRasterGlyph(@NonNull Canvas canvas, int glyphId, float x, float y,
+                                @NonNull Paint paint, @NonNull FontPaint fontPaint) {
+        if (mImageLoader == null) {
+            return;
+        }
+        Image image = mGlyphImages.get(glyphId);
+        if (image == null) {
+            image = mImageLoader.apply(getFileName(glyphId));
+            if (image == null) {
+                return;
+            }
+            mGlyphImages.put(glyphId, image);
+        }
+        final float size = fontPaint.getFontSize();
+        float sz = mBaseSize * size;
+        if (!fontPaint.isLinearMetrics()) {
+            sz = (int) (0.95 + sz);
+        }
+        // snap to integer pixels, a half-pixel dst rect leaves a partially covered
+        // edge that looks like leftover specks
+        float dstLeft = Math.round(x);
+        float dstTop = Math.round(y - mBaseAscent * size);
+        float dstRight = dstLeft + Math.max(1, Math.round(sz));
+        float dstBottom = dstTop + Math.max(1, Math.round(sz));
+        canvas.drawImage(image, 0, 0, image.getWidth(), image.getHeight(),
+                dstLeft, dstTop, dstRight, dstBottom, paint);
+    }
+
+    /**
+     * Close all cached glyph images. Call when this font is no longer used.
+     */
+    public void close() {
+        for (Image image : mGlyphImages.values()) {
+            image.close();
+        }
+        mGlyphImages.clear();
     }
 
     @Override
