@@ -325,10 +325,14 @@ public class FontCollection {
             case Emoji.VARIATION_SELECTOR_16 -> colorEmojiRequest = true;
             case Emoji.VARIATION_SELECTOR_15 -> colorEmojiRequest = false;
             default -> {
+                if (family.isColorEmojiFont() &&
+                        Emoji.isEmoji(ch) && !Emoji.isKeycapBase(ch)) {
+                    return 2;
+                }
                 return 1;
             }
         }
-        return colorEmojiRequest == family.isColorEmojiFamily() ? 2 : 1;
+        return colorEmojiRequest == family.isColorEmojiFont() ? 2 : 1;
     }
 
     @NonNull

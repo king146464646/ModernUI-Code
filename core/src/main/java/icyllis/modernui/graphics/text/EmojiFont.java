@@ -114,6 +114,11 @@ public final class EmojiFont implements Font {
     }
 
     @Override
+    public boolean isColorEmojiFont() {
+        return true;
+    }
+
+    @Override
     public int calcGlyphScore(char[] buf, int start, int limit) {
         final var breaker = (BreakIterator) sBreaker.clone();
         final var iterator = new CharArrayIterator(buf, start, limit);

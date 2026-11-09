@@ -293,6 +293,10 @@ public final class FontFamily {
         return mIsColorEmoji;
     }
 
+    public boolean isColorEmojiFont() {
+        return mFont.isColorEmojiFont();
+    }
+
     public boolean hasGlyph(int ch) {
         return mFont.hasGlyph(ch, 0);
     }

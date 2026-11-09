@@ -88,6 +88,11 @@ public interface Font {
         return limit;
     }
 
+    @ApiStatus.Internal
+    default boolean isColorEmojiFont() {
+        return false;
+    }
+
     // map characters to glyphs
     @ApiStatus.Internal
     float doSimpleLayout(char[] buf, int start, int limit,
