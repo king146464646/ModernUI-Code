@@ -25,6 +25,7 @@ import icyllis.modernui.annotation.Nullable;
 import icyllis.modernui.annotation.Size;
 import icyllis.modernui.graphics.text.Font;
 import icyllis.modernui.graphics.text.FontPaint;
+import icyllis.modernui.graphics.text.LayoutPiece;
 import icyllis.modernui.graphics.text.OutlineFont;
 import icyllis.modernui.graphics.text.ShapedText;
 import icyllis.modernui.view.Gravity;
@@ -1338,7 +1339,50 @@ public abstract class Canvas {
      */
     public void drawShapedText(@NonNull ShapedText text,
                                float x, float y, @NonNull Paint paint) {
-        drawTextBlob(text.getTextBlob(), x, y, paint);
+        var blob = text.getTextBlob();
+        if (blob != null) {
+            drawTextBlob(blob, x, y, paint);
+        }
+        if (text.hasRasterGlyphs()) {
+            var fontPaint = text.getPaint();
+            if (fontPaint != null) {
+                drawRasterGlyphs(this, text, 0.0f, x, y, paint, fontPaint);
+            }
+        }
+    }
+
+    public static void drawRasterGlyphs(@NonNull Canvas canvas, @NonNull LayoutPiece piece,
+                                        float offsetX, float baseX, float baseY,
+                                        @NonNull Paint paint, @NonNull FontPaint fontPaint) {
+        final int n = piece.getGlyphCount();
+        final int[] glyphs = piece.getGlyphs();
+        final float[] positions = piece.getPositions();
+        for (int i = 0; i < n; i++) {
+            Font font = piece.getFont(i);
+            if (font.getNativeTypeface() == null && font.hasRasterGlyphs()) {
+                font.drawRasterGlyph(canvas, glyphs[i],
+                        baseX + offsetX + positions[i << 1],
+                        baseY + positions[(i << 1) + 1],
+                        paint, fontPaint);
+            }
+        }
+    }
+
+    public static void drawRasterGlyphs(@NonNull Canvas canvas, @NonNull ShapedText text,
+                                        float offsetX, float baseX, float baseY,
+                                        @NonNull Paint paint, @NonNull FontPaint fontPaint) {
+        final int n = text.getGlyphCount();
+        final int[] glyphs = text.getGlyphs();
+        final float[] positions = text.getPositions();
+        for (int i = 0; i < n; i++) {
+            Font font = text.getFont(i);
+            if (font.getNativeTypeface() == null && font.hasRasterGlyphs()) {
+                font.drawRasterGlyph(canvas, glyphs[i],
+                        baseX + offsetX + positions[i << 1],
+                        baseY + positions[(i << 1) + 1],
+                        paint, fontPaint);
+            }
+        }
     }
 
     public void drawSimpleText(@NonNull char[] text, @NonNull Font font,

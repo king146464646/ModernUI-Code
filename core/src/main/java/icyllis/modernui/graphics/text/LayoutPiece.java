@@ -267,6 +267,15 @@ public final class LayoutPiece {
         return mFonts[0];
     }
 
+    public boolean hasRasterGlyphs() {
+        for (Font font : mFonts) {
+            if (font.getNativeTypeface() == null && font.hasRasterGlyphs()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * Returns the number of characters (i.e. constructor <code>limit - start</code> in code units).
      */

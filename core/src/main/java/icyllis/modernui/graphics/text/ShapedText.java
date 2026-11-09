@@ -195,6 +195,18 @@ public class ShapedText {
         return mFonts[0];
     }
 
+    public boolean hasRasterGlyphs() {
+        if (mFonts == null) {
+            return false;
+        }
+        for (Font font : mFonts) {
+            if (font.getNativeTypeface() == null && font.hasRasterGlyphs()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * Returns the number of characters (i.e. constructor <code>limit - start</code> in code units).
      * This is available when {@link #CREATE_CLUSTER_ADVANCES} is set.

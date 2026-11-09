@@ -26,13 +26,17 @@ import icyllis.modernui.graphics.Paint;
 import icyllis.modernui.graphics.text.CharUtils;
 import icyllis.modernui.graphics.text.FontMetricsInt;
 import icyllis.modernui.graphics.text.GraphemeBreak;
+import icyllis.modernui.graphics.text.LayoutPiece;
 import icyllis.modernui.graphics.text.ShapedText;
 import icyllis.modernui.graphics.text.TextRunShaper;
 import icyllis.modernui.text.style.CharacterStyle;
 import icyllis.modernui.text.style.MetricAffectingSpan;
 import icyllis.modernui.text.style.ReplacementSpan;
 import icyllis.modernui.util.Pools;
+import it.unimi.dsi.fastutil.floats.FloatArrayList;
 import org.jetbrains.annotations.ApiStatus;
+
+import java.util.ArrayList;
 
 /**
  * Represents a line of styled text, for measuring in visual order and
@@ -81,8 +85,16 @@ public class TextLine {
     private final TextBlob.Builder mTextBlobBuilder = new TextBlob.Builder();
     private final FontMetricsInt mCachedFontExtent = new FontMetricsInt();
 
-    private final ShapedText.RunConsumer mBuildTextBlob = (piece, start, end, isRtl, paint, offsetX) ->
-            icyllis.modernui.graphics.pipeline.ArcCanvas.buildTextBlob(mTextBlobBuilder, piece, offsetX, paint);
+    private final ArrayList<LayoutPiece> mRasterPieces = new ArrayList<>(0);
+    private final FloatArrayList mRasterOffsets = new FloatArrayList(0);
+
+    private final ShapedText.RunConsumer mBuildTextBlob = (piece, start, end, isRtl, paint, offsetX) -> {
+        icyllis.modernui.graphics.pipeline.ArcCanvas.buildTextBlob(mTextBlobBuilder, piece, offsetX, paint);
+        if (piece.hasRasterGlyphs()) {
+            mRasterPieces.add(piece);
+            mRasterOffsets.add(offsetX);
+        }
+    };
 
     private TextLine() {
     }
@@ -994,6 +1006,8 @@ public class TextLine {
 
         if (c != null || needWidth) {
             mCachedFontExtent.reset();
+            mRasterPieces.clear();
+            mRasterOffsets.clear();
             //TODO the complexity of building text blob should be handled by Canvas
             // once TextDisplayList is deployed
             if (mCharsValid) {
@@ -1039,6 +1053,15 @@ public class TextLine {
 
             TextBlob blob = mTextBlobBuilder.build();
             c.drawTextBlob(blob, leftX, y + wp.baselineShift, wp);
+
+            if (!mRasterPieces.isEmpty()) {
+                for (int i = 0, n = mRasterPieces.size(); i < n; i++) {
+                    Canvas.drawRasterGlyphs(c, mRasterPieces.get(i), mRasterOffsets.getFloat(i),
+                            leftX, y + wp.baselineShift, wp, wp.getInternalPaint());
+                }
+                mRasterPieces.clear();
+                mRasterOffsets.clear();
+            }
 
             if (flags != 0) {
                 if (paint == null) {

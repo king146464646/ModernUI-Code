@@ -366,7 +366,12 @@ public class ArcCanvas extends Canvas {
         ShapedText.doLayoutRun(
                 text, contextStart, contextEnd,
                 start, end, isRtl, fontPaint, null,
-                (piece, __, ___, ____, _fontPaint, offsetX) -> buildTextBlob(builder, piece, offsetX, _fontPaint)
+                (piece, __, ___, ____, _fontPaint, offsetX) -> {
+                    buildTextBlob(builder, piece, offsetX, _fontPaint);
+                    if (piece.hasRasterGlyphs()) {
+                        drawRasterGlyphs(this, piece, offsetX, x, y, paint, _fontPaint);
+                    }
+                }
         );
         drawTextBlob(builder.build(), x, y, paint);
     }
@@ -389,7 +394,12 @@ public class ArcCanvas extends Canvas {
         ShapedText.doLayoutRun(
                 buf, 0, len,
                 start - contextStart, end - contextStart, isRtl, fontPaint, null,
-                (piece, __, ___, ____, _fontPaint, offsetX) -> buildTextBlob(builder, piece, offsetX, _fontPaint)
+                (piece, __, ___, ____, _fontPaint, offsetX) -> {
+                    buildTextBlob(builder, piece, offsetX, _fontPaint);
+                    if (piece.hasRasterGlyphs()) {
+                        drawRasterGlyphs(this, piece, offsetX, x, y, paint, _fontPaint);
+                    }
+                }
         );
         CharUtils.recycle(buf);
         drawTextBlob(builder.build(), x, y, paint);

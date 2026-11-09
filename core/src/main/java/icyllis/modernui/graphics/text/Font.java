@@ -20,6 +20,8 @@ package icyllis.modernui.graphics.text;
 
 import icyllis.modernui.annotation.NonNull;
 import icyllis.modernui.annotation.Nullable;
+import icyllis.modernui.graphics.Canvas;
+import icyllis.modernui.graphics.Paint;
 import icyllis.modernui.graphics.Rect;
 import it.unimi.dsi.fastutil.floats.FloatArrayList;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
@@ -104,4 +106,14 @@ public interface Font {
 
     @ApiStatus.Internal
     icyllis.arc3d.sketch.Typeface getNativeTypeface();
+
+    @ApiStatus.Internal
+    default boolean hasRasterGlyphs() {
+        return false;
+    }
+
+    @ApiStatus.Internal
+    default void drawRasterGlyph(@NonNull Canvas canvas, int glyphId, float x, float y,
+                                 @NonNull Paint paint, @NonNull FontPaint fontPaint) {
+    }
 }
