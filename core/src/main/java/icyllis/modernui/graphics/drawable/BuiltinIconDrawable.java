@@ -1,19 +1,19 @@
 /*
- * Modern UI.
- * Copyright (C) 2025 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2025-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package icyllis.modernui.graphics.drawable;
@@ -21,6 +21,7 @@ package icyllis.modernui.graphics.drawable;
 import icyllis.modernui.annotation.NonNull;
 import icyllis.modernui.annotation.Nullable;
 import icyllis.modernui.graphics.Canvas;
+import icyllis.modernui.graphics.Color;
 import icyllis.modernui.graphics.Matrix;
 import icyllis.modernui.graphics.Paint;
 import icyllis.modernui.resources.Resources;
@@ -56,15 +57,15 @@ public class BuiltinIconDrawable extends Drawable {
     public static final int CHECK = 4;
     public static final int CHECK_SMALL = 5;
     public static final int CHECK_INDETERMINATE_SMALL = 6;
-    public static final int RADIO_SMALL = 7; // Modern UI added
+    public static final int RADIO_SMALL = 7; // ModernUI added
 
     public static final float SIZE = 24;
     private final int mSize;
     private final int mIconType;
 
     private ColorStateList mTint;
-    private int mColor = ~0;
-    private int mAlpha = 255;
+    private long mColor = Color.WHITE_LONG;
+    private float mAlpha = 1f;
 
     private boolean mAutoMirrored = false;
 
@@ -90,8 +91,8 @@ public class BuiltinIconDrawable extends Drawable {
     public void draw(@NonNull Canvas canvas) {
         var paint = Paint.obtain();
         paint.setColor(mColor);
-        paint.setAlpha(ShapeDrawable.modulateAlpha(paint.getAlpha(), mAlpha));
-        if (paint.getAlpha() != 0) {
+        paint.setAlpha(paint.getAlphaF() * mAlpha);
+        if (paint.getAlphaF() != 0) {
             var b = getBounds();
             // map (0, -960, 960, 0) to dst bounds, and mirror if needed
             float sx = b.width() / VIEWPORT_SIZE;
@@ -125,11 +126,11 @@ public class BuiltinIconDrawable extends Drawable {
         clip[2] = 320; clip[3] = -664;
         clip[4] = 376; clip[5] = -720;
         clip[6] = 616; clip[7] = -480;
-        c.drawEdgeAAQuad(null, clip, Canvas.QUAD_AA_FLAG_TOP|Canvas.QUAD_AA_FLAG_RIGHT|Canvas.QUAD_AA_FLAG_BOTTOM, p);
+        c.drawEdgeAAQuad(null, clip, 0, Canvas.EDGE_AA_FLAG_TOP|Canvas.EDGE_AA_FLAG_RIGHT|Canvas.EDGE_AA_FLAG_BOTTOM, p);
         // counter-clockwise
         clip[3] = -296;
         clip[5] = -240;
-        c.drawEdgeAAQuad(null, clip, Canvas.QUAD_AA_FLAG_TOP|Canvas.QUAD_AA_FLAG_RIGHT|Canvas.QUAD_AA_FLAG_BOTTOM, p);
+        c.drawEdgeAAQuad(null, clip, 0, Canvas.EDGE_AA_FLAG_TOP|Canvas.EDGE_AA_FLAG_RIGHT|Canvas.EDGE_AA_FLAG_BOTTOM, p);
     }
 
     void keyboard_arrow_left(@NonNull Canvas c, @NonNull Paint p) {
@@ -139,11 +140,11 @@ public class BuiltinIconDrawable extends Drawable {
         clip[2] = 560; clip[3] = -720;
         clip[4] = 616; clip[5] = -664;
         clip[6] = 432; clip[7] = -480;
-        c.drawEdgeAAQuad(null, clip, Canvas.QUAD_AA_FLAG_TOP|Canvas.QUAD_AA_FLAG_RIGHT|Canvas.QUAD_AA_FLAG_BOTTOM, p);
+        c.drawEdgeAAQuad(null, clip, 0, Canvas.EDGE_AA_FLAG_TOP|Canvas.EDGE_AA_FLAG_RIGHT|Canvas.EDGE_AA_FLAG_BOTTOM, p);
         // counter-clockwise
         clip[3] = -240;
         clip[5] = -296;
-        c.drawEdgeAAQuad(null, clip, Canvas.QUAD_AA_FLAG_TOP|Canvas.QUAD_AA_FLAG_RIGHT|Canvas.QUAD_AA_FLAG_BOTTOM, p);
+        c.drawEdgeAAQuad(null, clip, 0, Canvas.EDGE_AA_FLAG_TOP|Canvas.EDGE_AA_FLAG_RIGHT|Canvas.EDGE_AA_FLAG_BOTTOM, p);
     }
 
     void keyboard_arrow_down(@NonNull Canvas c, @NonNull Paint p) {
@@ -153,11 +154,11 @@ public class BuiltinIconDrawable extends Drawable {
         clip[2] = 240; clip[3] = -584;
         clip[4] = 296; clip[5] = -640;
         clip[6] = 480; clip[7] = -456;
-        c.drawEdgeAAQuad(null, clip, Canvas.QUAD_AA_FLAG_TOP|Canvas.QUAD_AA_FLAG_RIGHT|Canvas.QUAD_AA_FLAG_BOTTOM, p);
+        c.drawEdgeAAQuad(null, clip, 0, Canvas.EDGE_AA_FLAG_TOP|Canvas.EDGE_AA_FLAG_RIGHT|Canvas.EDGE_AA_FLAG_BOTTOM, p);
         // counter-clockwise
         clip[2] = 720;
         clip[4] = 664;
-        c.drawEdgeAAQuad(null, clip, Canvas.QUAD_AA_FLAG_TOP|Canvas.QUAD_AA_FLAG_RIGHT|Canvas.QUAD_AA_FLAG_BOTTOM, p);
+        c.drawEdgeAAQuad(null, clip, 0, Canvas.EDGE_AA_FLAG_TOP|Canvas.EDGE_AA_FLAG_RIGHT|Canvas.EDGE_AA_FLAG_BOTTOM, p);
     }
 
     void keyboard_arrow_up(@NonNull Canvas c, @NonNull Paint p) {
@@ -167,11 +168,11 @@ public class BuiltinIconDrawable extends Drawable {
         clip[2] = 296; clip[3] = -344;
         clip[4] = 240; clip[5] = -400;
         clip[6] = 480; clip[7] = -640;
-        c.drawEdgeAAQuad(null, clip, Canvas.QUAD_AA_FLAG_TOP|Canvas.QUAD_AA_FLAG_RIGHT|Canvas.QUAD_AA_FLAG_BOTTOM, p);
+        c.drawEdgeAAQuad(null, clip, 0, Canvas.EDGE_AA_FLAG_TOP|Canvas.EDGE_AA_FLAG_RIGHT|Canvas.EDGE_AA_FLAG_BOTTOM, p);
         // counter-clockwise
         clip[2] = 664;
         clip[4] = 720;
-        c.drawEdgeAAQuad(null, clip, Canvas.QUAD_AA_FLAG_TOP|Canvas.QUAD_AA_FLAG_RIGHT|Canvas.QUAD_AA_FLAG_BOTTOM, p);
+        c.drawEdgeAAQuad(null, clip, 0, Canvas.EDGE_AA_FLAG_TOP|Canvas.EDGE_AA_FLAG_RIGHT|Canvas.EDGE_AA_FLAG_BOTTOM, p);
     }
 
     void check(@NonNull Canvas c, @NonNull Paint p) {
@@ -181,11 +182,11 @@ public class BuiltinIconDrawable extends Drawable {
         clip[2] = 154; clip[3] = -468;
         clip[4] = 211; clip[5] = -525;
         clip[6] = 382; clip[7] = -354;
-        c.drawEdgeAAQuad(null, clip, Canvas.QUAD_AA_FLAG_TOP|Canvas.QUAD_AA_FLAG_RIGHT|Canvas.QUAD_AA_FLAG_BOTTOM, p);
+        c.drawEdgeAAQuad(null, clip, 0, Canvas.EDGE_AA_FLAG_TOP|Canvas.EDGE_AA_FLAG_RIGHT|Canvas.EDGE_AA_FLAG_BOTTOM, p);
         // counter-clockwise
         clip[2] = 806; clip[3] = -664;
         clip[4] = 749; clip[5] = -721;
-        c.drawEdgeAAQuad(null, clip, Canvas.QUAD_AA_FLAG_TOP|Canvas.QUAD_AA_FLAG_RIGHT|Canvas.QUAD_AA_FLAG_BOTTOM, p);
+        c.drawEdgeAAQuad(null, clip, 0, Canvas.EDGE_AA_FLAG_TOP|Canvas.EDGE_AA_FLAG_RIGHT|Canvas.EDGE_AA_FLAG_BOTTOM, p);
     }
 
     void check_small(@NonNull Canvas c, @NonNull Paint p) {
@@ -195,11 +196,11 @@ public class BuiltinIconDrawable extends Drawable {
         clip[2] = 240; clip[3] = -464;
         clip[4] = 296; clip[5] = -520;
         clip[6] = 400; clip[7] = -416;
-        c.drawEdgeAAQuad(null, clip, Canvas.QUAD_AA_FLAG_TOP|Canvas.QUAD_AA_FLAG_RIGHT|Canvas.QUAD_AA_FLAG_BOTTOM, p);
+        c.drawEdgeAAQuad(null, clip, 0, Canvas.EDGE_AA_FLAG_TOP|Canvas.EDGE_AA_FLAG_RIGHT|Canvas.EDGE_AA_FLAG_BOTTOM, p);
         // counter-clockwise
         clip[2] = 720; clip[3] = -624;
         clip[4] = 664; clip[5] = -680;
-        c.drawEdgeAAQuad(null, clip, Canvas.QUAD_AA_FLAG_TOP|Canvas.QUAD_AA_FLAG_RIGHT|Canvas.QUAD_AA_FLAG_BOTTOM, p);
+        c.drawEdgeAAQuad(null, clip, 0, Canvas.EDGE_AA_FLAG_TOP|Canvas.EDGE_AA_FLAG_RIGHT|Canvas.EDGE_AA_FLAG_BOTTOM, p);
     }
 
     void check_indeterminate_small(@NonNull Canvas c, @NonNull Paint p) {
@@ -215,9 +216,9 @@ public class BuiltinIconDrawable extends Drawable {
         if (mTint != tint) {
             mTint = tint;
             if (tint != null) {
-                mColor = tint.getColorForState(getState(), ~0);
+                mColor = tint.getColorForState(getState(), Color.WHITE_LONG);
             } else {
-                mColor = ~0;
+                mColor = Color.WHITE_LONG;
             }
             invalidateSelf();
         }
@@ -226,7 +227,7 @@ public class BuiltinIconDrawable extends Drawable {
     @Override
     protected boolean onStateChange(@NonNull int[] stateSet) {
         if (mTint != null) {
-            mColor = mTint.getColorForState(stateSet, ~0);
+            mColor = mTint.getColorForState(stateSet, Color.WHITE_LONG);
             return true;
         }
         return false;
@@ -243,7 +244,7 @@ public class BuiltinIconDrawable extends Drawable {
     }
 
     @Override
-    public void setAlpha(int alpha) {
+    public void setAlpha(float alpha) {
         if (mAlpha != alpha) {
             mAlpha = alpha;
             invalidateSelf();
@@ -251,7 +252,7 @@ public class BuiltinIconDrawable extends Drawable {
     }
 
     @Override
-    public int getAlpha() {
+    public float getAlpha() {
         return mAlpha;
     }
 

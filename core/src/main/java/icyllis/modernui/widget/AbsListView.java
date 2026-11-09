@@ -1,19 +1,19 @@
 /*
- * Modern UI.
+ * ModernUI.
  * Copyright (C) 2022-2025 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  *
  * This file incorporates work covered by the following copyright and
  * permission notice:
@@ -35,6 +35,7 @@
 
 package icyllis.modernui.widget;
 
+import icyllis.modernui.R;
 import icyllis.modernui.animation.TimeInterpolator;
 import icyllis.modernui.annotation.NonNull;
 import icyllis.modernui.annotation.Nullable;
@@ -44,6 +45,9 @@ import icyllis.modernui.graphics.MathUtil;
 import icyllis.modernui.graphics.Rect;
 import icyllis.modernui.graphics.drawable.ColorDrawable;
 import icyllis.modernui.graphics.drawable.Drawable;
+import icyllis.modernui.graphics.drawable.ShapeDrawable;
+import icyllis.modernui.resources.TypedValue;
+import icyllis.modernui.util.ColorStateList;
 import icyllis.modernui.util.Log;
 import icyllis.modernui.util.LongSparseArray;
 import icyllis.modernui.util.SparseArray;
@@ -61,11 +65,18 @@ import org.slf4j.MarkerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Predicate;
+
+import static icyllis.modernui.util.Log.LOGGER;
 
 /**
  * Base class that can be used to implement virtualized lists of items. A list does
  * not have a spatial definition here. For instance, subclasses of this class can
- * display the content of the list in a grid, in a carousel, as stack, etc.
+ * display the content of the list in a grid, in a carousel (see ViewPager), etc.
+ *
+ * @see ListView
+ * @see GridView
+ * @see StaggeredGridView
  */
 public abstract class AbsListView extends AdapterView<ListAdapter> implements Filter.FilterListener {
 
@@ -194,6 +205,30 @@ public abstract class AbsListView extends AdapterView<ListAdapter> implements Fi
      * The list allows multiple choices in a modal selection mode
      */
     public static final int CHOICE_MODE_MULTIPLE_MODAL = 3;
+
+    /**
+     * A class that represents a fixed view in a list, for example a header at the top
+     * or a footer at the bottom.
+     */
+    public static class FixedViewInfo {
+        /**
+         * The view to add to the list
+         */
+        public View view;
+        /**
+         * The data backing the view. This is returned from {@link ListAdapter#getItem(int)}.
+         */
+        public Object data;
+        /**
+         * <code>true</code> if the fixed view should be selectable in the list
+         */
+        public boolean isSelectable;
+    }
+
+    ArrayList<FixedViewInfo> mHeaderViewInfos = new ArrayList<>();
+    ArrayList<FixedViewInfo> mFooterViewInfos = new ArrayList<>();
+
+    boolean mAreAllItemsSelectable = true;
 
     /**
      * Controls if/how the user may choose/check items in the list
@@ -661,18 +696,25 @@ public abstract class AbsListView extends AdapterView<ListAdapter> implements Fi
         mOverscrollDistance = configuration.getScaledOverscrollDistance();
         mOverflingDistance = configuration.getScaledOverflingDistance();
 
-        /*setVerticalScrollBarEnabled(true);
+        ColorStateList tint = null;
+        final TypedValue value = new TypedValue();
+        if (context.getTheme().resolveAttribute(R.ns, R.attr.colorControlNormal, value, true)) {
+            tint = context.getResources().loadColorStateList(value, null, context.getTheme());
+        }
+        setVerticalScrollBarEnabled(true);
         ShapeDrawable thumb = new ShapeDrawable();
         thumb.setShape(ShapeDrawable.VLINE);
-        thumb.setStroke(dp(4), SystemTheme.modulateColor(SystemTheme.currentTheme().colorOnSurfaceVariant, 0.25f));
+        thumb.setStroke(dp(4), 0x84ffffff);
         thumb.setCornerRadius(1);
+        thumb.setTintList(tint);
         setVerticalScrollbarThumbDrawable(thumb);
         ShapeDrawable track = new ShapeDrawable();
         track.setShape(ShapeDrawable.VLINE);
-        track.setStroke(dp(4), SystemTheme.modulateColor(SystemTheme.currentTheme().colorOnSurfaceVariant, 0.25f));
+        track.setStroke(dp(4), 0x39ffffff);
         track.setSize(dp(4), -1);
         track.setCornerRadius(1);
-        setVerticalScrollbarTrackDrawable(track);*/
+        track.setTintList(tint);
+        setVerticalScrollbarTrackDrawable(track);
     }
 
     /**
@@ -1005,8 +1047,8 @@ public abstract class AbsListView extends AdapterView<ListAdapter> implements Fi
         if (childCount == 0) return true;
         if (childCount != mItemCount) return false;
 
-        return getChildAt(0).getTop() >= mListPadding.top &&
-                getChildAt(childCount - 1).getBottom() <= getHeight() - mListPadding.bottom;
+        return getHighestChildTop() >= mListPadding.top &&
+                getLowestChildBottom() <= getHeight() - mListPadding.bottom;
     }
 
     /**
@@ -1149,6 +1191,16 @@ public abstract class AbsListView extends AdapterView<ListAdapter> implements Fi
         mSelectorPosition = INVALID_POSITION;
         mSelectorRect.setEmpty();
         invalidate();
+    }
+
+    void clearRecycledState(@NonNull ArrayList<FixedViewInfo> infos) {
+        for (FixedViewInfo info : infos) {
+            final View child = info.view;
+            final ViewGroup.LayoutParams params = child.getLayoutParams();
+            if (checkLayoutParams(params)) {
+                ((LayoutParams) params).recycledHeaderFooter = false;
+            }
+        }
     }
 
     @Override
@@ -1295,8 +1347,7 @@ public abstract class AbsListView extends AdapterView<ListAdapter> implements Fi
         // ... Or top of 0th element is not visible
         if (!canScrollUp) {
             if (getChildCount() > 0) {
-                View child = getChildAt(0);
-                canScrollUp = child.getTop() < mListPadding.top;
+                canScrollUp = getHighestChildTop() < mListPadding.top;
             }
         }
 
@@ -1312,8 +1363,7 @@ public abstract class AbsListView extends AdapterView<ListAdapter> implements Fi
 
         // ... Or bottom of the last element is not visible
         if (!canScrollDown && count > 0) {
-            View child = getChildAt(count - 1);
-            canScrollDown = child.getBottom() > getBottom() - mListPadding.bottom;
+            canScrollDown = getLowestChildBottom() > getBottom() - mListPadding.bottom;
         }
 
         return canScrollDown;
@@ -2580,7 +2630,7 @@ public abstract class AbsListView extends AdapterView<ListAdapter> implements Fi
      */
     @Override
     protected boolean handleScrollBarDragging(MotionEvent event) {
-        // Doesn't support normal scroll bar dragging. Use FastScroller.
+        //TODO when superclass use scrollBy to scroll, we can remove this restriction
         return false;
     }
 
@@ -2826,8 +2876,8 @@ public abstract class AbsListView extends AdapterView<ListAdapter> implements Fi
             case TOUCH_MODE_SCROLL -> {
                 final int childCount = getChildCount();
                 if (childCount > 0) {
-                    final int firstChildTop = getChildAt(0).getTop();
-                    final int lastChildBottom = getChildAt(childCount - 1).getBottom();
+                    final int firstChildTop = getHighestChildTop();
+                    final int lastChildBottom = getLowestChildBottom();
                     final int contentTop = mListPadding.top;
                     final int contentBottom = getHeight() - mListPadding.bottom;
                     if (mFirstPosition == 0 && firstChildTop >= contentTop
@@ -2942,7 +2992,7 @@ public abstract class AbsListView extends AdapterView<ListAdapter> implements Fi
         if (velocity > 0) {
             return true;
         }
-        // Not used by Modern UI, the following branch should return false
+        // Not used by ModernUI, the following branch should return false
         float distance = 0;//edgeEffect.getDistance() * getHeight();
 
         // This is flinging without the spring, so let's see if it will fling past the overscroll
@@ -3662,9 +3712,9 @@ public abstract class AbsListView extends AdapterView<ListAdapter> implements Fi
         final int bottomLimit = getHeight() - getPaddingBottom();
 
         if (distance == 0 || mItemCount == 0 || childCount == 0 ||
-                (firstPos == 0 && getChildAt(0).getTop() == topLimit && distance < 0) ||
+                (firstPos == 0 && getHighestChildTop() == topLimit && distance < 0) ||
                 (lastPos == mItemCount &&
-                        getChildAt(childCount - 1).getBottom() == bottomLimit && distance > 0)) {
+                        getLowestChildBottom() == bottomLimit && distance > 0)) {
             mFlingRunnable.endFling();
             if (mPositionScroller != null) {
                 mPositionScroller.stop();
@@ -3711,6 +3761,12 @@ public abstract class AbsListView extends AdapterView<ListAdapter> implements Fi
         }
     }
 
+    @Override
+    public void scrollTo(int x, int y) {
+        Log.LOGGER.warn(MARKER, "AbsListView does not support scrolling to an absolute position. "
+                + "Use scrollToPosition instead");
+    }
+
     /**
      * Scrolls the list items within the view by a specified number of pixels.
      *
@@ -3742,11 +3798,11 @@ public abstract class AbsListView extends AdapterView<ListAdapter> implements Fi
         final int firstPosition = mFirstPosition;
         final Rect listPadding = mListPadding;
         if (direction > 0) {
-            final int lastBottom = getChildAt(childCount - 1).getBottom();
+            final int lastBottom = getLowestChildBottom();
             final int lastPosition = firstPosition + childCount;
             return lastPosition < mItemCount || lastBottom > getHeight() - listPadding.bottom;
         } else {
-            final int firstTop = getChildAt(0).getTop();
+            final int firstTop = getHighestChildTop();
             return firstPosition > 0 || firstTop < listPadding.top;
         }
     }
@@ -3765,8 +3821,8 @@ public abstract class AbsListView extends AdapterView<ListAdapter> implements Fi
             return true;
         }
 
-        final int firstTop = getChildAt(0).getTop();
-        final int lastBottom = getChildAt(childCount - 1).getBottom();
+        final int firstTop = getHighestChildTop();
+        final int lastBottom = getLowestChildBottom();
 
         final Rect listPadding = mListPadding;
 
@@ -3781,9 +3837,9 @@ public abstract class AbsListView extends AdapterView<ListAdapter> implements Fi
         }
 
         // FIXME account for grid vertical spacing too?
-        final int spaceAbove = effectivePaddingTop - firstTop;
+        final int spaceAbove = effectivePaddingTop - getFirstChildTop();
         final int end = getHeight() - effectivePaddingBottom;
-        final int spaceBelow = lastBottom - end;
+        final int spaceBelow = getLastChildBottom() - end;
 
         final int height = getHeight() - mPaddingBottom - mPaddingTop;
         if (deltaY < 0) {
@@ -3928,13 +3984,202 @@ public abstract class AbsListView extends AdapterView<ListAdapter> implements Fi
     }
 
     /**
+     * Header and Footer views are not scrapped / recycled like other views but they are still
+     * detached from the ViewGroup. After a layout operation, call this method to remove such views.
+     *
+     * @param infoList The info list to be traversed
+     */
+    void removeUnusedFixedViews(@Nullable List<FixedViewInfo> infoList) {
+        if (infoList == null) {
+            return;
+        }
+        for (int i = infoList.size() - 1; i >= 0; i--) {
+            final FixedViewInfo fixedViewInfo = infoList.get(i);
+            final View view = fixedViewInfo.view;
+            final LayoutParams lp = (LayoutParams) view.getLayoutParams();
+            if (view.getParent() == null && lp != null && lp.recycledHeaderFooter) {
+                removeDetachedView(view, false);
+                lp.recycledHeaderFooter = false;
+            }
+
+        }
+    }
+
+    /**
+     * @param child a direct child of this list.
+     * @return Whether child is a header or footer view.
+     */
+    boolean isDirectChildHeaderOrFooter(View child) {
+        final ArrayList<FixedViewInfo> headers = mHeaderViewInfos;
+        final int numHeaders = headers.size();
+        for (int i = 0; i < numHeaders; i++) {
+            if (child == headers.get(i).view) {
+                return true;
+            }
+        }
+
+        final ArrayList<FixedViewInfo> footers = mFooterViewInfos;
+        final int numFooters = footers.size();
+        for (int i = 0; i < numFooters; i++) {
+            if (child == footers.get(i).view) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Add a fixed view to appear at the top of the list. If this method is
+     * called more than once, the views will appear in the order they were
+     * added. Views added using this call can take focus if they want.
+     * <p>
+     * If the ListView's adapter does not extend
+     * {@link HeaderViewListAdapter}, it will be wrapped with a supporting
+     * instance of {@link WrapperListAdapter}.
+     *
+     * @param v            The view to add.
+     * @param data         Data to associate with this view
+     * @param isSelectable whether the item is selectable
+     */
+    public void addHeaderView(@NonNull View v, Object data, boolean isSelectable) {
+        if (v.getParent() != null && v.getParent() != this) {
+            LOGGER.warn(MARKER, "The specified child already has a parent. "
+                    + "You must call removeView() on the child's parent first.");
+        }
+
+        final FixedViewInfo info = new FixedViewInfo();
+        info.view = v;
+        info.data = data;
+        info.isSelectable = isSelectable;
+        mHeaderViewInfos.add(info);
+        mAreAllItemsSelectable &= isSelectable;
+
+        // Wrap the adapter if it wasn't already wrapped.
+        if (mAdapter != null) {
+            if (!(mAdapter instanceof HeaderViewListAdapter)) {
+                wrapHeaderListAdapterInternal();
+            }
+
+            // In the case of re-adding a header view, or adding one later on,
+            // we need to notify the observer.
+            if (mDataSetObserver != null) {
+                mDataSetObserver.onChanged();
+            }
+        }
+    }
+
+    /**
+     * Add a fixed view to appear at the top of the list. If this method is
+     * called more than once, the views will appear in the order they were
+     * added. Views added using this call can take focus if they want.
+     * <p>
+     * If the ListView's adapter does not extend
+     * {@link HeaderViewListAdapter}, it will be wrapped with a supporting
+     * instance of {@link WrapperListAdapter}.
+     *
+     * @param v The view to add.
+     */
+    public void addHeaderView(@NonNull View v) {
+        addHeaderView(v, null, true);
+    }
+
+    /**
      * Returns the number of header views in the list. Header views are special views
      * at the top of the list that should not be recycled during a layout.
      *
      * @return The number of header views, 0 in the default implementation.
      */
-    int getHeaderViewsCount() {
-        return 0;
+    public int getHeaderViewsCount() {
+        return mHeaderViewInfos.size();
+    }
+
+    /**
+     * Removes a previously-added header view.
+     *
+     * @param v The view to remove
+     * @return true if the view was removed, false if the view was not a header
+     * view
+     */
+    public boolean removeHeaderView(@NonNull View v) {
+        if (mHeaderViewInfos.size() > 0) {
+            boolean result = false;
+            if (mAdapter != null && ((HeaderViewListAdapter) mAdapter).removeHeader(v)) {
+                if (mDataSetObserver != null) {
+                    mDataSetObserver.onChanged();
+                }
+                result = true;
+            }
+            removeFixedViewInfo(v, mHeaderViewInfos);
+            return result;
+        }
+        return false;
+    }
+
+    private void removeFixedViewInfo(@NonNull View v, @NonNull ArrayList<FixedViewInfo> where) {
+        int len = where.size();
+        for (int i = 0; i < len; ++i) {
+            FixedViewInfo info = where.get(i);
+            if (info.view == v) {
+                where.remove(i);
+                break;
+            }
+        }
+    }
+
+    /**
+     * Add a fixed view to appear at the bottom of the list. If this method is
+     * called more than once, the views will appear in the order they were
+     * added. Views added using this call can take focus if they want.
+     * <p>
+     * If the ListView's adapter does not extend
+     * {@link HeaderViewListAdapter}, it will be wrapped with a supporting
+     * instance of {@link WrapperListAdapter}.
+     *
+     * @param v            The view to add.
+     * @param data         Data to associate with this view
+     * @param isSelectable true if the footer view can be selected
+     */
+    public void addFooterView(@NonNull View v, Object data, boolean isSelectable) {
+        if (v.getParent() != null && v.getParent() != this) {
+            LOGGER.warn(MARKER, "The specified child already has a parent. "
+                    + "You must call removeView() on the child's parent first.");
+        }
+
+        final FixedViewInfo info = new FixedViewInfo();
+        info.view = v;
+        info.data = data;
+        info.isSelectable = isSelectable;
+        mFooterViewInfos.add(info);
+        mAreAllItemsSelectable &= isSelectable;
+
+        // Wrap the adapter if it wasn't already wrapped.
+        if (mAdapter != null) {
+            if (!(mAdapter instanceof HeaderViewListAdapter)) {
+                wrapHeaderListAdapterInternal();
+            }
+
+            // In the case of re-adding a footer view, or adding one later on,
+            // we need to notify the observer.
+            if (mDataSetObserver != null) {
+                mDataSetObserver.onChanged();
+            }
+        }
+    }
+
+    /**
+     * Add a fixed view to appear at the bottom of the list. If this method is
+     * called more than once, the views will appear in the order they were
+     * added. Views added using this call can take focus if they want.
+     * <p>
+     * If the ListView's adapter does not extend
+     * {@link HeaderViewListAdapter}, it will be wrapped with a supporting
+     * instance of {@link WrapperListAdapter}.
+     *
+     * @param v The view to add.
+     */
+    public void addFooterView(@NonNull View v) {
+        addFooterView(v, null, true);
     }
 
     /**
@@ -3943,8 +4188,29 @@ public abstract class AbsListView extends AdapterView<ListAdapter> implements Fi
      *
      * @return The number of footer views, 0 in the default implementation.
      */
-    int getFooterViewsCount() {
-        return 0;
+    public int getFooterViewsCount() {
+        return mFooterViewInfos.size();
+    }
+
+    /**
+     * Removes a previously-added footer view.
+     *
+     * @param v The view to remove
+     * @return true if the view was removed, false if the view was not a footer view
+     */
+    public boolean removeFooterView(@NonNull View v) {
+        if (mFooterViewInfos.size() > 0) {
+            boolean result = false;
+            if (mAdapter != null && ((HeaderViewListAdapter) mAdapter).removeFooter(v)) {
+                if (mDataSetObserver != null) {
+                    mDataSetObserver.onChanged();
+                }
+                result = true;
+            }
+            removeFixedViewInfo(v, mFooterViewInfos);
+            return result;
+        }
+        return false;
     }
 
     /**
@@ -4008,6 +4274,22 @@ public abstract class AbsListView extends AdapterView<ListAdapter> implements Fi
 
         final int motionRow = findMotionRow(y);
         return motionRow != INVALID_POSITION ? motionRow : mFirstPosition + childCount - 1;
+    }
+
+    int getFirstChildTop() {
+        return getChildCount() > 0 ? getChildAt(0).getTop() : 0;
+    }
+
+    int getHighestChildTop() {
+        return getChildCount() > 0 ? getChildAt(0).getTop() : 0;
+    }
+
+    int getLastChildBottom() {
+        return getChildCount() > 0 ? getChildAt(getChildCount() - 1).getBottom() : 0;
+    }
+
+    int getLowestChildBottom() {
+        return getChildCount() > 0 ? getChildAt(getChildCount() - 1).getBottom() : 0;
     }
 
     /**
@@ -4509,6 +4791,7 @@ public abstract class AbsListView extends AdapterView<ListAdapter> implements Fi
      * @see #setBottomEdgeEffectColor(int)
      * @see #getBottomEdgeEffectColor()
      */
+    @Deprecated(forRemoval = true)
     public int getTopEdgeEffectColor() {
         return mEdgeGlowTop.getColor();
     }
@@ -4522,6 +4805,7 @@ public abstract class AbsListView extends AdapterView<ListAdapter> implements Fi
      * @see #setBottomEdgeEffectColor(int)
      * @see #getTopEdgeEffectColor()
      */
+    @Deprecated(forRemoval = true)
     public int getBottomEdgeEffectColor() {
         return mEdgeGlowBottom.getColor();
     }
@@ -5095,9 +5379,12 @@ public abstract class AbsListView extends AdapterView<ListAdapter> implements Fi
             final ArrayList<View>[] scrapViews = mScrapViews;
             for (int i = 0; i < viewTypeCount; ++i) {
                 final ArrayList<View> scrapPile = scrapViews[i];
-                int size = scrapPile.size();
-                while (size > maxViews) {
-                    scrapPile.remove(--size);
+                // Fixed by ModernUI
+                for (int j = scrapPile.size() - 1; j >= maxViews; j--) {
+                    View v = scrapPile.remove(j);
+                    if (v.isTemporarilyDetached()) {
+                        removeDetachedView(v);
+                    }
                 }
             }
 
@@ -5173,9 +5460,12 @@ public abstract class AbsListView extends AdapterView<ListAdapter> implements Fi
         }
 
         private void clearScrap(@NonNull final ArrayList<View> scrap) {
-            final int scrapCount = scrap.size();
-            for (int j = 0; j < scrapCount; j++) {
-                removeDetachedView(scrap.remove(scrapCount - 1 - j));
+            // Fixed by ModernUI
+            for (int j = scrap.size() - 1; j >= 0; j--) {
+                View v = scrap.remove(j);
+                if (v.isTemporarilyDetached()) {
+                    removeDetachedView(v);
+                }
             }
         }
 
@@ -5185,6 +5475,147 @@ public abstract class AbsListView extends AdapterView<ListAdapter> implements Fi
         private void removeDetachedView(View child) {
             AbsListView.this.removeDetachedView(child, false);
         }
+    }
+
+    /**
+     * @see View#findViewById(int)
+     */
+    @Nullable
+    @Override
+    @SuppressWarnings("unchecked")
+    protected <T extends View> T findViewTraversal(int id) {
+        // First look in our children, then in any header and footer views that
+        // may be scrolled off.
+        View v = super.findViewTraversal(id);
+        if (v == null) {
+            v = findViewInHeadersOrFooters(mHeaderViewInfos, id);
+            if (v != null) {
+                return (T) v;
+            }
+            v = findViewInHeadersOrFooters(mFooterViewInfos, id);
+            if (v != null) {
+                return (T) v;
+            }
+        }
+        return (T) v;
+    }
+
+    View findViewInHeadersOrFooters(ArrayList<FixedViewInfo> where, int id) {
+        // Look in the passed in list of headers or footers for the view.
+        if (where != null) {
+            int len = where.size();
+            View v;
+
+            for (int i = 0; i < len; i++) {
+                v = where.get(i).view;
+
+                if (!v.isRootNamespace()) {
+                    v = v.findViewById(id);
+
+                    if (v != null) {
+                        return v;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * @see View#findViewWithTag(Object)
+     */
+    @Nullable
+    @Override
+    @SuppressWarnings("unchecked")
+    protected <T extends View> T findViewWithTagTraversal(Object tag) {
+        // First look in our children, then in any header and footer views that
+        // may be scrolled off.
+        View v = super.findViewWithTagTraversal(tag);
+        if (v == null) {
+            v = findViewWithTagInHeadersOrFooters(mHeaderViewInfos, tag);
+            if (v != null) {
+                return (T) v;
+            }
+
+            v = findViewWithTagInHeadersOrFooters(mFooterViewInfos, tag);
+            if (v != null) {
+                return (T) v;
+            }
+        }
+        return (T) v;
+    }
+
+    View findViewWithTagInHeadersOrFooters(ArrayList<FixedViewInfo> where, Object tag) {
+        // Look in the passed in list of headers or footers for the view with
+        // the tag.
+        if (where != null) {
+            int len = where.size();
+            View v;
+
+            for (int i = 0; i < len; i++) {
+                v = where.get(i).view;
+
+                if (!v.isRootNamespace()) {
+                    v = v.findViewWithTag(tag);
+
+                    if (v != null) {
+                        return v;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * First look in our children, then in any header and footer views that may
+     * be scrolled off.
+     *
+     * @see View#findViewByPredicate(Predicate)
+     */
+    @Nullable
+    @Override
+    @SuppressWarnings("unchecked")
+    protected <T extends View> T findViewByPredicateTraversal(
+            @NonNull Predicate<View> predicate, @Nullable View childToSkip) {
+        View v = super.findViewByPredicateTraversal(predicate, childToSkip);
+        if (v == null) {
+            v = findViewByPredicateInHeadersOrFooters(mHeaderViewInfos, predicate, childToSkip);
+            if (v != null) {
+                return (T) v;
+            }
+
+            v = findViewByPredicateInHeadersOrFooters(mFooterViewInfos, predicate, childToSkip);
+            if (v != null) {
+                return (T) v;
+            }
+        }
+        return (T) v;
+    }
+
+    /**
+     * Look in the passed in list of headers or footers for the first view that
+     * matches the predicate.
+     */
+    View findViewByPredicateInHeadersOrFooters(ArrayList<FixedViewInfo> where,
+                                               Predicate<View> predicate, View childToSkip) {
+        if (where != null) {
+            int len = where.size();
+            View v;
+
+            for (int i = 0; i < len; i++) {
+                v = where.get(i).view;
+
+                if (v != childToSkip && !v.isRootNamespace()) {
+                    v = v.findViewByPredicate(predicate);
+
+                    if (v != null) {
+                        return v;
+                    }
+                }
+            }
+        }
+        return null;
     }
 
     /**
@@ -5713,5 +6144,17 @@ public abstract class AbsListView extends AdapterView<ListAdapter> implements Fi
                 }
             }
         }
+    }
+
+    @NonNull
+    HeaderViewListAdapter wrapHeaderListAdapterInternal(
+            ArrayList<ListView.FixedViewInfo> headerViewInfos,
+            ArrayList<ListView.FixedViewInfo> footerViewInfos,
+            ListAdapter adapter) {
+        return new HeaderViewListAdapter(headerViewInfos, footerViewInfos, adapter);
+    }
+
+    void wrapHeaderListAdapterInternal() {
+        mAdapter = wrapHeaderListAdapterInternal(mHeaderViewInfos, mFooterViewInfos, mAdapter);
     }
 }

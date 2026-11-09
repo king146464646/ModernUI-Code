@@ -1,24 +1,25 @@
 /*
- * Modern UI.
- * Copyright (C) 2019-2023 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2019-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package icyllis.modernui.view;
 
 import icyllis.modernui.graphics.Rect;
+import icyllis.modernui.graphics.pipeline.DrawShadowUtils;
 import org.jetbrains.annotations.ApiStatus;
 
 /**
@@ -136,7 +137,7 @@ public interface WindowManager extends ViewManager {
          */
         public final void setSurfaceInsets(View view, boolean manual, boolean preservePrevious) {
             //TODO
-            final int surfaceInset = (int) Math.ceil(view.getZ() * 3);
+            final int surfaceInset = (int) Math.ceil(view.getZ() * DrawShadowUtils.kOutsetPerZ);
             if (surfaceInset == 0) {
                 // OK to have 0 (this is the case for non-freeform windows).
                 surfaceInsets.set(0, 0, 0, 0);

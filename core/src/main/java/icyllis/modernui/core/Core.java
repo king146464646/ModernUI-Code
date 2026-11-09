@@ -1,19 +1,19 @@
 /*
- * Modern UI.
- * Copyright (C) 2019-2022 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2019-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package icyllis.modernui.core;
@@ -21,8 +21,11 @@ package icyllis.modernui.core;
 import icyllis.arc3d.engine.ContextOptions;
 import icyllis.arc3d.engine.Engine;
 import icyllis.arc3d.engine.ImmediateContext;
+import icyllis.arc3d.granite.GraniteUtil;
 import icyllis.arc3d.granite.RecordingContext;
 import icyllis.arc3d.opengl.GLUtil;
+import icyllis.arc3d.vulkan.VKUtil;
+import icyllis.arc3d.vulkan.VulkanBackendContext;
 import icyllis.modernui.annotation.MainThread;
 import icyllis.modernui.annotation.NonNull;
 import icyllis.modernui.annotation.RenderThread;
@@ -256,6 +259,10 @@ public final class Core {
             if (dc == null) {
                 return false;
             }
+            if (!GraniteUtil.init(dc)) {
+                dc.unref();
+                return false;
+            }
             sImmediateContext = dc;
         }
         final String glVendor = GL11C.glGetString(GL11C.GL_VENDOR);
@@ -266,7 +273,7 @@ public final class Core {
         LOGGER.info(MARKER, "OpenGL renderer: {}", glRenderer);
         LOGGER.info(MARKER, "OpenGL version: {}", glVersion);
         StringBuilder sb = new StringBuilder("\n");
-        ((icyllis.arc3d.opengl.GLCaps) dc.getCaps()).dump(sb, false);
+        dc.getCaps().dump(sb, false);
         LOGGER.info(MARKER, "OpenGL caps: {}", sb);
         return true;
     }
@@ -346,17 +353,16 @@ public final class Core {
         new Thread(() -> {
             String solution = "Please make sure you have up-to-date GPU drivers. " +
                     "Also make sure Java applications run with the discrete GPU if you have multiple GPUs.";
-            TinyFileDialogs.tinyfd_messageBox("Failed to launch Modern UI",
+            TinyFileDialogs.tinyfd_messageBox("Failed to launch ModernUI",
                     "GPU: " + glVendor + " " + glRenderer + ", OpenGL: " + glVersion + ". " +
                             "OpenGL 3.3 or OpenGL ES 3.0 is required.\n" + solution,
                     "ok", "error", true);
         }, "GL-Error-Dialog").start();
     }
 
-    //TODO WIP
     @RenderThread
-    public static boolean initVulkan() {
-        return initVulkan(new ContextOptions());
+    public static boolean initVulkan(@NonNull VulkanBackendContext backendContext) {
+        return initVulkan(backendContext, new ContextOptions());
     }
 
     /**
@@ -367,9 +373,9 @@ public final class Core {
      *
      * @return true if successful
      */
-    //TODO WIP
     @RenderThread
-    public static boolean initVulkan(@NonNull ContextOptions options) {
+    public static boolean initVulkan(@NonNull VulkanBackendContext backendContext,
+                                     @NonNull ContextOptions options) {
         final ImmediateContext dc;
         synchronized (Core.class) {
             if (sImmediateContext != null) {
@@ -383,20 +389,20 @@ public final class Core {
             } else if (Thread.currentThread() != sRenderThread) {
                 throw new IllegalStateException();
             }
-            try {
-                var vkManager = VulkanManager.getInstance();
-                vkManager.initialize();
-                initContextOptions(options);
-                dc = vkManager.createContext(options);
-                if (dc == null) {
-                    return false;
-                }
-            } catch (Exception e) {
-                e.printStackTrace();
+            initContextOptions(options);
+            dc = VKUtil.makeVulkan(backendContext, options);
+            if (dc == null) {
+                return false;
+            }
+            if (!GraniteUtil.init(dc)) {
+                dc.unref();
                 return false;
             }
             sImmediateContext = dc;
         }
+        StringBuilder sb = new StringBuilder("\n");
+        dc.getCaps().dump(sb, false);
+        LOGGER.info(MARKER, "Vulkan caps: {}", sb);
         return true;
     }
 
@@ -700,7 +706,7 @@ public final class Core {
                 }
             }
         } catch (Throwable t) {
-            memFree(p);
+            memFree((Buffer) p);
             throw t;
         }
         return p;

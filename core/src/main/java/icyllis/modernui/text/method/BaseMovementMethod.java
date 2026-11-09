@@ -1,19 +1,19 @@
 /*
- * Modern UI.
- * Copyright (C) 2019-2021 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2019-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package icyllis.modernui.text.method;
@@ -111,59 +111,99 @@ public abstract class BaseMovementMethod implements MovementMethod {
             case KeyEvent.KEY_LEFT:
                 if (movementMods == 0) {
                     return left(widget, buffer);
-                } else if ((movementMods & KeyEvent.META_CTRL_ON) != 0) {
-                    return leftWord(widget, buffer);
-                } else if ((movementMods & KeyEvent.META_ALT_ON) != 0) {
-                    return lineStart(widget, buffer);
+                } else if (KeyEvent.IS_MACOS) {
+                    if ((movementMods & KeyEvent.META_ALT_ON) != 0) {
+                        return leftWord(widget, buffer);
+                    } else if ((movementMods & KeyEvent.META_SUPER_ON) != 0) {
+                        return lineStart(widget, buffer);
+                    }
+                } else {
+                    if ((movementMods & KeyEvent.META_CONTROL_ON) != 0) {
+                        return leftWord(widget, buffer);
+                    } else if ((movementMods & KeyEvent.META_ALT_ON) != 0) {
+                        return lineStart(widget, buffer);
+                    }
                 }
                 break;
 
             case KeyEvent.KEY_RIGHT:
                 if (movementMods == 0) {
                     return right(widget, buffer);
-                } else if ((movementMods & KeyEvent.META_CTRL_ON) != 0) {
-                    return rightWord(widget, buffer);
-                } else if ((movementMods & KeyEvent.META_ALT_ON) != 0) {
-                    return lineEnd(widget, buffer);
+                } else if (KeyEvent.IS_MACOS) {
+                    if ((movementMods & KeyEvent.META_ALT_ON) != 0) {
+                        return rightWord(widget, buffer);
+                    } else if ((movementMods & KeyEvent.META_SUPER_ON) != 0) {
+                        return lineEnd(widget, buffer);
+                    }
+                } else {
+                    if ((movementMods & KeyEvent.META_CONTROL_ON) != 0) {
+                        return rightWord(widget, buffer);
+                    } else if ((movementMods & KeyEvent.META_ALT_ON) != 0) {
+                        return lineEnd(widget, buffer);
+                    }
                 }
                 break;
 
             case KeyEvent.KEY_UP:
                 if (movementMods == 0) {
                     return up(widget, buffer);
-                } else if ((movementMods & KeyEvent.META_ALT_ON) != 0) {
-                    return top(widget, buffer);
+                } else if (KeyEvent.IS_MACOS) {
+                    if ((movementMods & KeyEvent.META_SUPER_ON) != 0) {
+                        return top(widget, buffer);
+                    }
+                } else {
+                    if ((movementMods & KeyEvent.META_ALT_ON) != 0) {
+                        return top(widget, buffer);
+                    }
                 }
                 break;
 
             case KeyEvent.KEY_DOWN:
                 if (movementMods == 0) {
                     return down(widget, buffer);
-                } else if ((movementMods & KeyEvent.META_ALT_ON) != 0) {
-                    return bottom(widget, buffer);
+                } else if (KeyEvent.IS_MACOS) {
+                    if ((movementMods & KeyEvent.META_SUPER_ON) != 0) {
+                        return bottom(widget, buffer);
+                    }
+                } else {
+                    if ((movementMods & KeyEvent.META_ALT_ON) != 0) {
+                        return bottom(widget, buffer);
+                    }
                 }
                 break;
 
             case KeyEvent.KEY_PAGE_UP:
                 if (movementMods == 0) {
                     return pageUp(widget, buffer);
-                } else if ((movementMods & KeyEvent.META_ALT_ON) != 0) {
-                    return top(widget, buffer);
+                } else if (KeyEvent.IS_MACOS) {
+                    if ((movementMods & KeyEvent.META_SUPER_ON) != 0) {
+                        return top(widget, buffer);
+                    }
+                } else {
+                    if ((movementMods & KeyEvent.META_ALT_ON) != 0) {
+                        return top(widget, buffer);
+                    }
                 }
                 break;
 
             case KeyEvent.KEY_PAGE_DOWN:
                 if (movementMods == 0) {
                     return pageDown(widget, buffer);
-                } else if ((movementMods & KeyEvent.META_ALT_ON) != 0) {
-                    return bottom(widget, buffer);
+                } else if (KeyEvent.IS_MACOS) {
+                    if ((movementMods & KeyEvent.META_SUPER_ON) != 0) {
+                        return bottom(widget, buffer);
+                    }
+                } else {
+                    if ((movementMods & KeyEvent.META_ALT_ON) != 0) {
+                        return bottom(widget, buffer);
+                    }
                 }
                 break;
 
             case KeyEvent.KEY_HOME:
                 if (movementMods == 0) {
                     return home(widget, buffer);
-                } else if ((movementMods & KeyEvent.META_CTRL_ON) != 0) {
+                } else if ((movementMods & KeyEvent.META_SHORTCUT_ON) != 0) {
                     return top(widget, buffer);
                 }
                 break;
@@ -171,7 +211,7 @@ public abstract class BaseMovementMethod implements MovementMethod {
             case KeyEvent.KEY_END:
                 if (movementMods == 0) {
                     return end(widget, buffer);
-                } else if ((movementMods & KeyEvent.META_CTRL_ON) != 0) {
+                } else if ((movementMods & KeyEvent.META_SHORTCUT_ON) != 0) {
                     return bottom(widget, buffer);
                 }
                 break;

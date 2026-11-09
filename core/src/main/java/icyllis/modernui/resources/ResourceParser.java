@@ -1,19 +1,19 @@
 /*
- * Modern UI.
- * Copyright (C) 2019-2023 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2019-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package icyllis.modernui.resources;
@@ -93,7 +93,7 @@ public class ResourceParser {
 
     public boolean Parse(XMLStreamReader reader) {
         try {
-            if (reader.nextTag() == XMLResourceReader.START_ELEMENT &&
+            if (reader.nextTag() == XMLStreamConstants.START_ELEMENT &&
                     reader.getNamespaceURI() == null &&
                     reader.getLocalName().equals("resources")) {
                 return ParseResources(reader);

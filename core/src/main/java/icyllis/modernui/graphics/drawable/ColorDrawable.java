@@ -1,19 +1,19 @@
 /*
- * Modern UI.
- * Copyright (C) 2019-2022 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2022-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package icyllis.modernui.graphics.drawable;
@@ -47,6 +47,16 @@ public class ColorDrawable extends Drawable {
      * @param color The color to draw.
      */
     public ColorDrawable(@ColorInt int color) {
+        mColorState = new ColorState();
+        setColor(color);
+    }
+
+    /**
+     * Creates a new ColorDrawable with the specified color.
+     *
+     * @param color The color to draw.
+     */
+    public ColorDrawable(@ColorLong long color) {
         mColorState = new ColorState();
         setColor(color);
     }
@@ -88,7 +98,7 @@ public class ColorDrawable extends Drawable {
 
     @Override
     public void draw(@NonNull Canvas canvas) {
-        final int color = mColorState.mUseColor;
+        final long color = mColorState.mUseColor;
         final ColorFilter colorFilter = mPaint.getColorFilter();
         if (Color.alpha(color) != 0 || colorFilter != null
                 || mBlendModeColorFilter != null) {
@@ -106,21 +116,32 @@ public class ColorDrawable extends Drawable {
     /**
      * Gets the drawable's color value.
      *
-     * @return int The color to draw.
+     * @return The color to draw.
      */
-    @ColorInt
-    public int getColor() {
+    @ColorLong
+    public long getColor() {
         return mColorState.mUseColor;
     }
 
     /**
      * Sets the drawable's color value. This action will clobber the results of
-     * prior calls to {@link #setAlpha(int)} on this object, which side-affected
+     * prior calls to {@link #setAlpha(float)} on this object, which side-affected
      * the underlying color.
      *
      * @param color The color to draw.
      */
     public void setColor(@ColorInt int color) {
+        setColor(Color.pack(color));
+    }
+
+    /**
+     * Sets the drawable's color value. This action will clobber the results of
+     * prior calls to {@link #setAlpha(float)} on this object, which side-affected
+     * the underlying color.
+     *
+     * @param color The color to draw.
+     */
+    public void setColor(@ColorLong long color) {
         if (mColorState.mBaseColor != color || mColorState.mUseColor != color) {
             mColorState.mBaseColor = mColorState.mUseColor = color;
             invalidateSelf();
@@ -129,15 +150,15 @@ public class ColorDrawable extends Drawable {
 
     /**
      * Returns the alpha value of this drawable's color. Note this may not be the same alpha value
-     * provided in {@link Drawable#setAlpha(int)}. Instead, this will return the alpha of the color
+     * provided in {@link Drawable#setAlpha(float)}. Instead, this will return the alpha of the color
      * combined with the alpha provided by setAlpha
      *
-     * @return A value between 0 and 255.
-     * @see ColorDrawable#setAlpha(int)
+     * @return A value between 0.0 and 1.0.
+     * @see ColorDrawable#setAlpha(float)
      */
     @Override
-    public int getAlpha() {
-        return mColorState.mUseColor >>> 24;
+    public float getAlpha() {
+        return Color.alpha(mColorState.mUseColor);
     }
 
     /**
@@ -145,14 +166,14 @@ public class ColorDrawable extends Drawable {
      * an alpha applied to it, this will apply this alpha to the existing value instead of
      * overwriting it.
      *
-     * @param alpha The alpha value to set, between 0 and 255.
+     * @param alpha The alpha value to set, between 0.0 and 1.0.
      */
     @Override
-    public void setAlpha(int alpha) {
-        alpha += alpha >> 7;   // make it 0..256
-        final int baseAlpha = mColorState.mBaseColor >>> 24;
-        final int useAlpha = baseAlpha * alpha >> 8;
-        final int useColor = (mColorState.mBaseColor << 8 >>> 8) | (useAlpha << 24);
+    public void setAlpha(float alpha) {
+        alpha = MathUtil.clamp(alpha, 0f, 1f);
+        final float baseAlpha = Color.alpha(mColorState.mBaseColor);
+        final float useAlpha = baseAlpha * alpha;
+        final long useColor = Color.withAlpha(mColorState.mBaseColor, useAlpha);
         if (mColorState.mUseColor != useColor) {
             mColorState.mUseColor = useColor;
             invalidateSelf();
@@ -199,7 +220,7 @@ public class ColorDrawable extends Drawable {
     @Override
     public void getOutline(@NonNull Outline outline) {
         outline.setRect(getBounds());
-        outline.setAlpha(getAlpha() / 255.0f);
+        outline.setAlpha(getAlpha());
     }
 
     @Override
@@ -209,8 +230,8 @@ public class ColorDrawable extends Drawable {
 
     static final class ColorState extends ConstantState {
 
-        int mBaseColor; // base color, independent of setAlpha()
-        int mUseColor;  // base color, modulated by setAlpha()
+        long mBaseColor; // base color, independent of setAlpha()
+        long mUseColor;  // base color, modulated by setAlpha()
         ColorStateList mTint = null;
         BlendMode mBlendMode = DEFAULT_BLEND_MODE;
 

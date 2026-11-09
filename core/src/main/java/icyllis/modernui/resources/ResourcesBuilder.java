@@ -1,53 +1,58 @@
 /*
- * Modern UI.
- * Copyright (C) 2025 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2025-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package icyllis.modernui.resources;
 
-import icyllis.arc3d.engine.TopologicalSort;
-import icyllis.modernui.R;
 import icyllis.modernui.annotation.AnyRes;
 import icyllis.modernui.annotation.AttrRes;
 import icyllis.modernui.annotation.NonNull;
 import icyllis.modernui.annotation.Nullable;
 import icyllis.modernui.annotation.StyleRes;
 import icyllis.modernui.graphics.drawable.Drawable;
+import icyllis.modernui.resources.ResourceTypes.ResTable_entry;
+import icyllis.modernui.resources.ResourceTypes.ResTable_map;
+import icyllis.modernui.resources.ResourceTypes.ResTable_type;
+import icyllis.modernui.resources.ResourceTypes.Res_value;
 import icyllis.modernui.util.ColorStateList;
-import it.unimi.dsi.fastutil.objects.Object2IntMap;
 import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
+import it.unimi.dsi.fastutil.objects.Object2LongOpenHashMap;
 import org.jetbrains.annotations.ApiStatus;
 
+import javax.annotation.WillCloseWhenClosed;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.Objects;
 import java.util.function.BiFunction;
 import java.util.function.ToIntFunction;
 
 /**
- * Not stable
+ * This class allows to build an asset pack at runtime. The resources it creates
+ * are all under a single namespace.
  *
- * @hidden
+ * @since 3.13
  */
-@ApiStatus.Internal
 public class ResourcesBuilder {
+
+    String mNamespace;
 
     Object2IntOpenHashMap<String> mTypeStringTable = new Object2IntOpenHashMap<>();
     ArrayList<String> mTypeStringArray = new ArrayList<>();
@@ -65,22 +70,41 @@ public class ResourcesBuilder {
         return index;
     };
 
-    Object2IntOpenHashMap<Object> mGlobalObjectTable = new Object2IntOpenHashMap<>();
-    ArrayList<Object> mGlobalObjectArray = new ArrayList<>();
-    ToIntFunction<Object> mGlobalObjectMapper = k -> {
-        int index = mGlobalObjectArray.size();
-        mGlobalObjectArray.add(k);
+    Object2IntOpenHashMap<String> mGlobalStringTable = new Object2IntOpenHashMap<>();
+    ArrayList<String> mGlobalStringArray = new ArrayList<>();
+    ToIntFunction<String> mGlobalStringMapper = k -> {
+        int index = mGlobalStringArray.size();
+        mGlobalStringArray.add(k);
+        return index;
+    };
+
+    Object2IntOpenHashMap<BiFunction<Resources, Resources.Theme, ?>> mFactoryTable = new Object2IntOpenHashMap<>();
+    ArrayList<BiFunction<Resources, Resources.Theme, ?>> mFactoryArray = new ArrayList<>();
+    ToIntFunction<BiFunction<Resources, Resources.Theme, ?>> mFactoryMapper = k -> {
+        int index = mFactoryArray.size();
+        mFactoryArray.add(k);
+        return index;
+    };
+
+    Object2IntOpenHashMap<String> mLibraryTable = new Object2IntOpenHashMap<>();
+    ArrayList<String> mLibraryArray = new ArrayList<>();
+    ToIntFunction<String> mLibraryMapper = k -> {
+        int index = mLibraryArray.size();
+        mLibraryArray.add(k);
         return index;
     };
 
     HashMap<String, Style> mStyleTable = new HashMap<>();
-    Object2IntOpenHashMap<String> mStyleToOffset = new Object2IntOpenHashMap<>();
 
-    public ResourcesBuilder() {
+    // type -> entry -> (dataType << 32) | data
+    HashMap<String, Object2LongOpenHashMap<String>> mValueTable = new HashMap<>();
+
+    public ResourcesBuilder(@NonNull String namespace) {
+        mNamespace = namespace;
         mTypeStringTable.defaultReturnValue(-1);
         mKeyStringTable.defaultReturnValue(-1);
-        mGlobalObjectTable.defaultReturnValue(-1);
-        mStyleToOffset.defaultReturnValue(-1);
+        mGlobalStringTable.defaultReturnValue(-1);
+        mFactoryTable.defaultReturnValue(-1);
     }
 
     int storeTypeString(String type) {
@@ -95,220 +119,419 @@ public class ResourcesBuilder {
         return mKeyStringArray.get(storeKeyString(key));
     }
 
-    int storeGlobalObject(Object o) {
-        return mGlobalObjectTable.computeIfAbsent(o, mGlobalObjectMapper);
+    int storeGlobalString(String o) {
+        return mGlobalStringTable.computeIfAbsent(o, mGlobalStringMapper);
     }
 
-    public Style newStyle(@NonNull @StyleRes ResourceId id,
+    int storeFactory(BiFunction<Resources, Resources.Theme, ?> factory) {
+        return mFactoryTable.computeIfAbsent(factory, mFactoryMapper);
+    }
+
+    int storeNamespace(String namespace) {
+        return mLibraryTable.computeIfAbsent(namespace, mLibraryMapper);
+    }
+
+    int genId(String namespace, String entry) {
+        int packageId = namespace.equals(mNamespace) ? 0 : storeNamespace(namespace) + 1;
+        return (packageId << Res_value.PACKAGE_ID_SHIFT) | storeKeyString(entry);
+    }
+
+    /**
+     * @return the namespace for all resources
+     */
+    public String getNamespace() {
+        return mNamespace;
+    }
+
+    /**
+     * Find an existing style builder.
+     *
+     * @param name the style name
+     * @return the style builder for the style, if any
+     * @see #newStyle(String, ResourceId)
+     */
+    @Nullable
+    public Style getStyle(@NonNull @StyleRes String name) {
+        return mStyleTable.get(name);
+    }
+
+    /**
+     * Adds a style resource, returns the style builder to fill attribute values.
+     * <p>
+     * The final resource id is {@code new ResourceId(getNamespace(), "style", name)}.
+     *
+     * @param name   the style name
+     * @param parent the parent of the style, if any
+     * @return the style builder for the style
+     */
+    public Style newStyle(@NonNull @StyleRes String name,
                           @Nullable @StyleRes ResourceId parent) {
-        assert id.namespace().equals(R.ns) && id.type().equals("style");
-        String name = dedupKeyString(id.entry());
-        String parentName;
-        if (parent != null) {
-            assert parent.namespace().equals(R.ns) && parent.type().equals("style");
-            parentName = dedupKeyString(parent.entry());
-        } else {
-            parentName = null;
-        }
-        Style builder = new Style(name, parentName);
-        if (mStyleTable.putIfAbsent(name, builder) == null) {
+        assert parent == null || parent.type().equals("style");
+        Style builder = mStyleTable.get(name);
+        if (builder == null) {
+            builder = new Style(name, parent);
+            mStyleTable.put(name, builder);
             return builder;
         }
-        throw new IllegalStateException("style is already defined");
+        if (Objects.equals(builder.mParent, parent)) {
+            return builder;
+        }
+        throw new IllegalStateException(
+                String.format("style %s is already defined with parent %s", name, builder.mParent));
     }
 
-    public Resources build() {
-        Resources resources = new Resources();
+    /**
+     * Adds a style resource, returns the style builder to fill attribute values.
+     * <p>
+     * For the resource id, its namespace must be {@link #getNamespace()},
+     * and its type must be {@code "style"}.
+     *
+     * @param id     the style resource id
+     * @param parent the parent of the style, if any
+     * @return the style builder for the style
+     * @see #newStyle(String, ResourceId)
+     */
+    public Style newStyle(@NonNull @StyleRes ResourceId id,
+                          @Nullable @StyleRes ResourceId parent) {
+        assert id.namespace().equals(mNamespace) && id.type().equals("style");
+        return newStyle(id.entry(), parent);
+    }
 
-        resources.mTypeStrings = mTypeStringArray.toArray(new String[0]);
+    @NonNull
+    Object2LongOpenHashMap<String> getType(@NonNull String type) {
+        return mValueTable.computeIfAbsent(type, __ -> new Object2LongOpenHashMap<>());
+    }
+
+    /**
+     * Adds a string resource.
+     *
+     * @param id    the string resource id
+     * @param value the resource value
+     */
+    public void addString(@NonNull @AnyRes ResourceId id,
+                          @NonNull String value) {
+        assert id.namespace().equals(mNamespace);
+        getType(id.type()).put(id.entry(),
+                ((long) Res_value.TYPE_STRING << 32) | storeGlobalString(value));
+    }
+
+    /**
+     * Creates the asset pack. The builder cannot be reused.
+     *
+     * @return a newly-created asset pack
+     * @throws IllegalStateException the runtime limit is exceeded
+     */
+    public ResourcesProvider build() {
+        return build(new EmptyAssetsProvider());
+    }
+
+    /**
+     * Creates the asset pack. The builder cannot be reused.
+     *
+     * @param assetsProvider the provider for additional assets
+     * @return a newly-created asset pack
+     * @throws IllegalStateException the runtime limit is exceeded
+     */
+    public ResourcesProvider build(@NonNull @WillCloseWhenClosed AssetsProvider assetsProvider) {
+        PackAssets packAssets = buildPack(assetsProvider);
+
+        return new ResourcesProvider(packAssets);
+    }
+
+    /**
+     * @hide
+     * @hidden
+     */
+    @ApiStatus.Internal
+    public PackAssets buildPack(@NonNull @WillCloseWhenClosed AssetsProvider assetsProvider) {
+        LoadedResources resources = new LoadedResources();
+
+        mGlobalStringTable = null;
+        resources.globalStringPool = new ResStringPool(mGlobalStringArray.toArray(new String[0]));
+        mGlobalStringArray = null;
+
+        mFactoryTable = null;
+        resources.factoryPool = mFactoryArray.toArray(new BiFunction[0]);
+        mFactoryArray = null;
+
+        LoadedPackage.TypeSpec styleTypeSpec;
+        buildStyles: {
+            ArrayList<Style> styles = new ArrayList<>(mStyleTable.values());
+            mStyleTable = null;
+            if (styles.isEmpty()) {
+                styleTypeSpec = null;
+                break buildStyles;
+            }
+
+            Object2IntOpenHashMap<String> entryIndexTable = new Object2IntOpenHashMap<>(styles.size());
+            entryIndexTable.defaultReturnValue(-1);
+            int valuesSize = 0;
+            int offsetsSize = 4 * styles.size();
+            for (int i = 0; i < styles.size(); i++) {
+                var style = styles.get(i);
+                style.mEntries.sort(Style.STYLE_ENTRY_COMPARATOR);
+                // entry data
+                valuesSize += ResTable_entry.SIZEOF_EXT + ResTable_map.SIZEOF * style.mEntries.size();
+                entryIndexTable.put(style.mName, i);
+            }
+
+            int[] styleOffsets = new int[styles.size()];
+
+            // allocate heap buffer
+            ByteBuffer data = ByteBuffer.allocate(offsetsSize + valuesSize)
+                    .order(ByteOrder.nativeOrder());
+            int offset = offsetsSize;
+            for (int i = 0; i < styles.size(); i++) {
+                var style = styles.get(i);
+                styleOffsets[i] = offset - offsetsSize;
+                data.putShort(offset + ResTable_entry.size, (short) ResTable_entry.SIZEOF_EXT);
+                data.putShort(offset + ResTable_entry.flags, (short) ResTable_entry.FLAG_COMPLEX);
+
+                int parentId = -1;
+                if (style.mParent != null) {
+                    parentId = genId(style.mParent.namespace(), style.mParent.entry());
+                }
+
+                data.putInt(offset + ResTable_entry.parent, parentId);
+                data.putInt(offset + ResTable_entry.count, style.mEntries.size());
+                offset += ResTable_entry.SIZEOF_EXT;
+
+                var entries = style.mEntries;
+                for (int j = 0; j < entries.size(); j++) {
+                    var entry = entries.get(j);
+                    int mapName = genId(entry.ns, entry.attr);
+                    data.putInt(offset + ResTable_map.name, mapName);
+                    data.putShort(offset + ResTable_map.value + Res_value.type, (short) entry.dataType);
+                    data.putInt(offset + ResTable_map.value + Res_value.data, entry.data);
+                    offset += ResTable_map.SIZEOF;
+                }
+            }
+            data.asIntBuffer().put(0, styleOffsets);
+            assert offset == offsetsSize + valuesSize;
+
+            LoadedPackage.TypeEntry typeEntry = new LoadedPackage.TypeEntry();
+            typeEntry.id = (byte) (storeTypeString("style") + 1);
+            typeEntry.entryCount = styles.size();
+            typeEntry.entriesStart = ResTable_type.SIZEOF + offsetsSize;
+            typeEntry.data = data;
+
+            styleTypeSpec = new LoadedPackage.TypeSpec(0, Collections.singletonList(typeEntry));
+            styleTypeSpec.id = typeEntry.id;
+            styleTypeSpec.entryIndexTable = entryIndexTable;
+        }
+
+        HashMap<String, LoadedPackage.TypeSpec> typeSpecs = new HashMap<>();
+
+        if (styleTypeSpec != null) {
+            typeSpecs.put("style", styleTypeSpec);
+        }
+
+        for (var typeE : mValueTable.entrySet()) {
+            String typeName = typeE.getKey();
+            Object2LongOpenHashMap<String> typeValues = typeE.getValue();
+
+            if (typeValues.isEmpty()) {
+                continue;
+            }
+
+            Object2IntOpenHashMap<String> entryIndexTable = new Object2IntOpenHashMap<>(typeValues.size());
+            entryIndexTable.defaultReturnValue(-1);
+            int valuesSize = ResTable_entry.SIZEOF * typeValues.size();
+            int offsetsSize = 4 * typeValues.size();
+            int i = 0;
+
+            int[] valueOffsets = new int[typeValues.size()];
+
+            // allocate heap buffer
+            ByteBuffer data = ByteBuffer.allocate(offsetsSize + valuesSize)
+                    .order(ByteOrder.nativeOrder());
+            int offset = offsetsSize;
+            for (var valueE : typeValues.object2LongEntrySet()) {
+                entryIndexTable.put(valueE.getKey(), i);
+
+                long packedValue = valueE.getLongValue();
+
+                valueOffsets[i] = offset - offsetsSize;
+                data.putShort(offset + ResTable_entry.dataType, (short) (packedValue >>> 32));
+                data.putShort(offset + ResTable_entry.flags, (short) 0);
+                data.putInt(offset + ResTable_entry.data, (int) packedValue);
+
+                offset += ResTable_entry.SIZEOF;
+            }
+            data.asIntBuffer().put(0, valueOffsets);
+            assert offset == offsetsSize + valuesSize;
+
+            LoadedPackage.TypeEntry typeEntry = new LoadedPackage.TypeEntry();
+            typeEntry.id = (byte) (storeTypeString(typeName) + 1);
+            typeEntry.entryCount = typeValues.size();
+            typeEntry.entriesStart = ResTable_type.SIZEOF + offsetsSize;
+            typeEntry.data = data;
+
+            var typeSpec = new LoadedPackage.TypeSpec(0, Collections.singletonList(typeEntry));
+            typeSpec.id = typeEntry.id;
+            typeSpec.entryIndexTable = entryIndexTable;
+            typeSpecs.put(typeName, typeSpec);
+        }
+
+        resources.typeStringPool = new ResStringPool(mTypeStringArray.toArray(new String[0]));
         mTypeStringArray = null;
-        resources.mKeyStrings = mKeyStringArray.toArray(new String[0]);
+        resources.keyStringPool = new ResStringPool(mKeyStringArray.toArray(new String[0]));
         mKeyStringArray = null;
 
-        mGlobalObjectTable = null;
-        resources.mGlobalObjects = mGlobalObjectArray.toArray();
-        mGlobalObjectArray = null;
-
-        ArrayList<Style> styles = new ArrayList<>(mStyleTable.values());
-        TopologicalSort.topologicalSort(styles, Style.TOPOSORT_TRAIT);
-
-        int dataCount = 0;
-        for (int i = 0; i < styles.size(); i++) {
-            var style = styles.get(i);
-            if (style.mParent != null && mStyleTable.get(style.mParent) == null) {
-                throw new IllegalStateException("parent style not found");
-            }
-            style.mEntries.sort(Style.STYLE_ENTRY_COMPARATOR);
-            dataCount += Resources.MAP_ENTRY_HEADER_COLUMNS + Resources.MAP_COLUMNS * style.mEntries.size();
+        resources.packageLibs[0] = mNamespace;
+        for (int i = 0; i < mLibraryArray.size(); i++) {
+            resources.packageLibs[i + 1] = mLibraryArray.get(i);
         }
 
-        mStyleTable = null;
+        LoadedPackage loadedPackage = new LoadedPackage(mNamespace);
+        loadedPackage.typeSpecs = typeSpecs;
 
-        int[] data = new int[dataCount];
-        int index = 0;
-        for (int i = 0; i < styles.size(); i++) {
-            var style = styles.get(i);
-            mStyleToOffset.put(style.mName, index);
-            data[index + Resources.MAP_ENTRY_PARENT] = style.mParent != null ?
-                    mKeyStringTable.getInt(style.mParent) : -1;
-            data[index + Resources.MAP_ENTRY_COUNT] = style.mEntries.size();
-            index += Resources.MAP_ENTRY_ENTRIES;
-            var entries = style.mEntries;
-            for (int j = 0; j < entries.size(); j++) {
-                var entry = entries.get(j);
-                data[index + Resources.MAP_NAME] = mKeyStringTable.getInt(entry.attr);
-                data[index + Resources.MAP_DATA_TYPE] = entry.dataType;
-                data[index + Resources.MAP_DATA] = entry.data;
-                index += Resources.MAP_COLUMNS;
-            }
-        }
-        assert index == dataCount;
+        resources.packages = new LoadedPackage[]{loadedPackage};
 
-        resources.mData = data;
-        mKeyStringTable = null;
-
-        @SuppressWarnings("unchecked") Object2IntMap.Entry<String>[] entries =
-                mStyleToOffset.object2IntEntrySet().toArray(new Object2IntMap.Entry[0]);
-        Arrays.sort(entries, Map.Entry.comparingByKey());
-        String[] styleKeys = new String[entries.length];
-        int[] styleOffsets = new int[entries.length];
-        for (int i = 0; i < entries.length; i++) {
-            styleKeys[i] = entries[i].getKey();
-            styleOffsets[i] = entries[i].getIntValue();
-        }
-        resources.mStyleKeys = styleKeys;
-        resources.mStyleOffsets = styleOffsets;
-        mStyleToOffset = null;
-
-        return resources;
+        return new PackAssets(assetsProvider, resources);
     }
 
+    /**
+     * A style under construction.
+     */
     public class Style {
 
-        static final TopologicalSort.Access<Style> TOPOSORT_TRAIT = new TopologicalSort.Access<>() {
-            @Override
-            public void setIndex(Style node, int index) {
-                node.mIndex = index;
-            }
-
-            @Override
-            public int getIndex(Style node) {
-                return node.mIndex;
-            }
-
-            @Override
-            public void setTempMarked(Style node, boolean marked) {
-                node.mTmpMarked = marked;
-            }
-
-            @Override
-            public boolean isTempMarked(Style node) {
-                return node.mTmpMarked;
-            }
-
-            @Override
-            public Collection<Style> getIncomingEdges(Style node) {
-                if (node.mParent != null) {
-                    Style parent = node.getThemeBuilder().mStyleTable.get(node.mParent);
-                    if (parent != null) {
-                        return List.of(parent);
-                    }
-                }
-                return List.of();
-            }
-        };
-
         String mName;
-        String mParent;
+        ResourceId mParent;
 
-        record Entry(@AttrRes String attr, int dataType, int data) {
+        record Entry(String ns, String attr, int dataType, int data) {
         }
 
         final ArrayList<Entry> mEntries = new ArrayList<>();
 
-        static final Comparator<Entry> STYLE_ENTRY_COMPARATOR = Comparator.comparing(Entry::attr);
+        static final Comparator<Entry> STYLE_ENTRY_COMPARATOR = (o1, o2) ->
+                ResourceId.comparePair(o1.ns, o1.attr, o2.ns, o2.attr);
 
-        int mIndex = -1;
-        boolean mTmpMarked;
-
-        Style(String name, String parent) {
+        Style(String name, ResourceId parent) {
             mName = name;
             mParent = parent;
         }
 
-        public void addNull(@AttrRes String attr, boolean empty) {
-            attr = dedupKeyString(attr);
-            mEntries.add(new Entry(attr, TypedValue.TYPE_NULL,
+        public void addNull(@NonNull @AttrRes String attr, boolean empty) {
+            addNull(mNamespace, attr, empty);
+        }
+
+        public void addNull(@NonNull String namespace, @NonNull String attrName, boolean empty) {
+            mEntries.add(new Entry(namespace, attrName, TypedValue.TYPE_NULL,
                     empty ? TypedValue.DATA_NULL_EMPTY : TypedValue.DATA_NULL_UNDEFINED)
             );
         }
 
-        public void addDimension(@AttrRes String attr, float value, int units) {
-            attr = dedupKeyString(attr);
-            mEntries.add(new Entry(attr, TypedValue.TYPE_DIMENSION,
+        public void addDimension(@NonNull @AttrRes String attr,
+                                 float value, @TypedValue.ComplexDimensionUnit int units) {
+            addDimension(mNamespace, attr, value, units);
+        }
+
+        public void addDimension(@NonNull String namespace, @NonNull String attrName,
+                                 float value, @TypedValue.ComplexDimensionUnit int units) {
+            mEntries.add(new Entry(namespace, attrName, TypedValue.TYPE_DIMENSION,
                     TypedValue.createComplexDimension(value, units))
             );
         }
 
-        public void addAttribute(@AttrRes String attr, @NonNull @AttrRes String target) {
-            attr = dedupKeyString(attr);
-            mEntries.add(new Entry(attr, TypedValue.TYPE_ATTRIBUTE,
+        public void addAttribute(@NonNull @AttrRes String attr, @NonNull @AttrRes String target) {
+            mEntries.add(new Entry(mNamespace, attr, TypedValue.TYPE_ATTRIBUTE,
                     storeKeyString(target)));
         }
 
-        public void addAttribute(@AttrRes String attr, @NonNull @AttrRes ResourceId target) {
-            assert target.type().equals("attr") && target.namespace().equals(Resources.DEFAULT_NAMESPACE);
-            addAttribute(attr, target.entry());
+        public void addAttribute(@NonNull @AttrRes String attr, @NonNull @AttrRes ResourceId target) {
+            addAttribute(mNamespace, attr, target);
         }
 
-        public void addReference(@AttrRes ResourceId attr, @Nullable @AnyRes ResourceId target) {
-            assert attr.type().equals("attr") && attr.namespace().equals(Resources.DEFAULT_NAMESPACE);
-            addReference(attr.entry(), target);
+        public void addAttribute(@NonNull @AttrRes ResourceId attr, @NonNull @AttrRes ResourceId target) {
+            assert attr.type().equals("attr");
+            addAttribute(attr.namespace(), attr.entry(), target);
         }
 
-        public void addReference(@AttrRes String attr, @Nullable @AnyRes ResourceId target) {
-            assert target == null || target.namespace().equals(Resources.DEFAULT_NAMESPACE);
-            attr = dedupKeyString(attr);
+        public void addAttribute(@NonNull String namespace, @NonNull String attrName,
+                                 @NonNull @AttrRes ResourceId target) {
+            assert target.type().equals("attr");
+            mEntries.add(new Entry(namespace, attrName, TypedValue.TYPE_ATTRIBUTE,
+                    genId(target.namespace(), target.entry())));
+        }
+
+        public void addReference(@NonNull @AttrRes String attr, @Nullable @AnyRes ResourceId target) {
+            addReference(mNamespace, attr, target);
+        }
+
+        public void addReference(@NonNull @AttrRes ResourceId attr, @Nullable @AnyRes ResourceId target) {
+            assert attr.type().equals("attr");
+            addReference(attr.namespace(), attr.entry(), target);
+        }
+
+        public void addReference(@NonNull String namespace, @NonNull String attrName,
+                                 @Nullable @AnyRes ResourceId target) {
             int typeId = target == null ? 0 : storeTypeString(target.type()) + 1;
-            mEntries.add(new Entry(attr, TypedValue.TYPE_REFERENCE | (typeId << ResourceTypes.Res_value.TYPE_ID_SHIFT),
-                    target == null ? 0 : storeKeyString(target.entry())));
+            mEntries.add(new Entry(namespace, attrName,
+                    TypedValue.TYPE_REFERENCE | (typeId << ResourceTypes.Res_value.DATA_TYPE_ID_SHIFT),
+                    target == null ? -1 : genId(target.namespace(), target.entry())));
         }
 
-        public void addBoolean(@AttrRes String attr, boolean v) {
-            attr = dedupKeyString(attr);
-            mEntries.add(new Entry(attr, TypedValue.TYPE_INT_BOOLEAN, v ? 1 : 0));
+        public void addBoolean(@NonNull @AttrRes String attr, boolean v) {
+            addBoolean(mNamespace, attr, v);
         }
 
-        public void addColor(@AttrRes String attr, int argb) {
-            attr = dedupKeyString(attr);
-            mEntries.add(new Entry(attr, TypedValue.TYPE_INT_COLOR_ARGB8, argb));
+        public void addBoolean(@NonNull String namespace, @NonNull String attrName, boolean v) {
+            mEntries.add(new Entry(namespace, attrName, TypedValue.TYPE_INT_BOOLEAN, v ? 1 : 0));
         }
 
-        public void addInteger(@AttrRes String attr, int v) {
-            attr = dedupKeyString(attr);
-            mEntries.add(new Entry(attr, TypedValue.TYPE_INT_DEC, v));
+        public void addColor(@NonNull @AttrRes String attr, int argb) {
+            addColor(mNamespace, attr, argb);
         }
 
-        public void addEnum(@AttrRes String attr, int ord) {
-            attr = dedupKeyString(attr);
-            mEntries.add(new Entry(attr, TypedValue.TYPE_INT_DEC, ord));
+        public void addColor(@NonNull String namespace, @NonNull String attrName, int argb) {
+            mEntries.add(new Entry(namespace, attrName, TypedValue.TYPE_INT_COLOR_ARGB8, argb));
         }
 
-        public void addFlags(@AttrRes String attr, int flags) {
-            attr = dedupKeyString(attr);
-            mEntries.add(new Entry(attr, TypedValue.TYPE_INT_HEX, flags));
+        public void addInteger(@NonNull @AttrRes String attr, int v) {
+            addInteger(mNamespace, attr, v);
         }
 
-        public void addColor(@AttrRes String attr, @NonNull BiFunction<Resources, Resources.Theme, ColorStateList> factory) {
-            attr = dedupKeyString(attr);
-            mEntries.add(new Entry(attr, TypedValue.TYPE_FACTORY,
-                    storeGlobalObject(factory)));
+        public void addInteger(@NonNull String namespace, @NonNull String attrName, int v) {
+            mEntries.add(new Entry(namespace, attrName, TypedValue.TYPE_INT_DEC, v));
         }
 
-        public void addDrawable(@AttrRes String attr, @NonNull BiFunction<Resources, Resources.Theme, Drawable> factory) {
-            attr = dedupKeyString(attr);
-            mEntries.add(new Entry(attr, TypedValue.TYPE_FACTORY,
-                    storeGlobalObject(factory)));
+        public void addEnum(@NonNull @AttrRes String attr, int ord) {
+            addEnum(mNamespace, attr, ord);
+        }
+
+        public void addEnum(@NonNull String namespace, @NonNull String attrName, int ord) {
+            mEntries.add(new Entry(namespace, attrName, TypedValue.TYPE_INT_DEC, ord));
+        }
+
+        public void addFlags(@NonNull @AttrRes String attr, int flags) {
+            addFlags(mNamespace, attr, flags);
+        }
+
+        public void addFlags(@NonNull String namespace, @NonNull String attrName, int flags) {
+            mEntries.add(new Entry(namespace, attrName, TypedValue.TYPE_INT_HEX, flags));
+        }
+
+        public void addColor(@NonNull @AttrRes String attr,
+                             @NonNull BiFunction<Resources, Resources.Theme, ColorStateList> factory) {
+            addColor(mNamespace, attr, factory);
+        }
+
+        public void addColor(@NonNull String namespace, @NonNull String attrName,
+                             @NonNull BiFunction<Resources, Resources.Theme, ColorStateList> factory) {
+            mEntries.add(new Entry(namespace, attrName, TypedValue.TYPE_FACTORY,
+                    storeFactory(factory)));
+        }
+
+        public void addDrawable(@NonNull @AttrRes String attr,
+                                @NonNull BiFunction<Resources, Resources.Theme, Drawable> factory) {
+            addDrawable(mNamespace, attr, factory);
+        }
+
+        public void addDrawable(@NonNull String namespace, @NonNull String attrName,
+                                @NonNull BiFunction<Resources, Resources.Theme, Drawable> factory) {
+            mEntries.add(new Entry(namespace, attrName, TypedValue.TYPE_FACTORY,
+                    storeFactory(factory)));
         }
 
         ResourcesBuilder getThemeBuilder() {

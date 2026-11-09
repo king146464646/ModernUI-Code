@@ -1,26 +1,27 @@
 /*
- * Modern UI.
- * Copyright (C) 2024 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2024-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package icyllis.modernui.test
 
 import icyllis.modernui.ModernUI
-import icyllis.modernui.TestFragment.TestLinearLayout
 import icyllis.modernui.fragment.Fragment
+import icyllis.modernui.graphics.Color
+import icyllis.modernui.graphics.drawable.GradientDrawable
 import icyllis.modernui.util.DataSet
 import icyllis.modernui.view.Gravity
 import icyllis.modernui.view.LayoutInflater
@@ -45,7 +46,19 @@ class TestHorizontalScrollView : Fragment() {
     ): View {
         val sv = HorizontalScrollView(context)
 
-        val content = TestLinearLayout(context)
+        val content = View(context).apply {
+            background = GradientDrawable().apply {
+                cornerRadius = dp(20f).toFloat()
+                orientation = GradientDrawable.Orientation.LEFT_RIGHT
+                gradientType = GradientDrawable.LINEAR_GRADIENT
+                setColors(intArrayOf(
+                    Color.argb(255, 45, 212, 191),
+                    Color.argb(255, 14, 165, 233)
+                ))
+                setStroke(4, Color.argb(255, 255, 255, 255))
+                isDither = true
+            }
+        }
         content.minimumWidth = sv.dp(1000f)
         content.layoutParams =
             FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT)

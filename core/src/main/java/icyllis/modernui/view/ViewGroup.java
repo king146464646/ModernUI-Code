@@ -1,19 +1,19 @@
 /*
- * Modern UI.
- * Copyright (C) 2020-2025 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2020-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  *
  * This file incorporates work covered by the following copyright and
  * permission notice:
@@ -511,13 +511,46 @@ public abstract class ViewGroup extends View implements ViewParent, ViewManager 
             return;
         }
 
+        var outlineRect = outline.getBounds();
+        var outlineRadius = outline.getRadius();
+
         if ((casterProperties.getClippingFlags() & RenderProperties.CLIP_TO_CLIP_BOUNDS) != 0) {
-            // we don't know the shape of the outline after it is clipped by the clip bounds
+            // we don't know the shape of the outline after it is clipped by the clip bounds,
+            // but we try to use an approximate shape if possible.
+            var clipRect = casterProperties.getClipBounds();
+            if (outlineRadius > 0f) {
+                // we expect that clip rect is fully contained in the outline rect.
+                if (!outlineRect.contains(clipRect)) {
+                    return;
+                }
+                // this method is fast, but might produce a shape that significantly differs from the
+                // exact intersection under certain inputs. However, since our clip bounds is
+                // primarily used for reveal animations, that don't generally produce strange results.
+                int diff = (clipRect.left - outlineRect.left)
+                        + (clipRect.top - outlineRect.top)
+                        + (outlineRect.right - clipRect.right)
+                        + (outlineRect.bottom - clipRect.bottom);
+                outlineRect = clipRect;
+                outlineRadius = Math.max(0, outlineRadius - diff / 4f);
+            } else {
+                Rect intersection = new Rect(outlineRect);
+                if (!intersection.intersect(clipRect)) {
+                    return;
+                }
+                outlineRect = intersection;
+            }
+        }
+        if (outlineRect.isEmpty()) {
             return;
         }
 
-        int ambientColor = (int) (mAmbientShadowAlpha * casterAlpha * 255) << 24;
-        int spotColor = (int) (mSpotShadowAlpha * casterAlpha * 255) << 24;
+        float ambientAlpha = mAmbientShadowAlpha * casterAlpha *
+                Color.alpha(casterProperties.getAmbientShadowColor());
+        float spotAlpha = mSpotShadowAlpha * casterAlpha *
+                Color.alpha(casterProperties.getSpotShadowColor());
+        if (ambientAlpha <= 0.001f && spotAlpha <= 0.001f) {
+            return;
+        }
 
         canvas.save();
         canvas.translate(child.mLeft, child.mTop);
@@ -545,10 +578,11 @@ public abstract class ViewGroup extends View implements ViewParent, ViewManager 
         }
         DrawShadowUtils.drawShadow(
                 ((ArcCanvas) canvas).getCanvas(),
-                outline.getBounds(), outline.getRadius(),
+                outlineRect, outlineRadius,
                 zPlane0, zPlane1, zPlane2,
                 LightingInfo.getLightX(), LightingInfo.getLightY(), LightingInfo.getLightZ(),
-                LightingInfo.getLightRadius(), ambientColor, spotColor
+                LightingInfo.getLightRadius(), casterProperties.getAmbientShadowColor(), ambientAlpha,
+                casterProperties.getSpotShadowColor(), spotAlpha
         );
 
         canvas.restore();
@@ -2240,7 +2274,7 @@ public abstract class ViewGroup extends View implements ViewParent, ViewManager 
 
         if (end == childrenCount) {
             for (int i = start; i < end; i++) {
-                // Fixed by Modern UI
+                // Fixed by ModernUI
                 if (!(mTransitioningViews != null && mTransitioningViews.contains(children[i]))) {
                     children[i].mParent = null;
                 }
@@ -2248,7 +2282,7 @@ public abstract class ViewGroup extends View implements ViewParent, ViewManager 
             }
         } else {
             for (int i = start; i < end; i++) {
-                // Fixed by Modern UI
+                // Fixed by ModernUI
                 if (!(mTransitioningViews != null && mTransitioningViews.contains(children[i]))) {
                     children[i].mParent = null;
                 }
@@ -2448,19 +2482,60 @@ public abstract class ViewGroup extends View implements ViewParent, ViewManager 
      * @param spotShadowAlpha    The alpha for the spot shadow.
      * @since 3.12
      */
-    @ApiStatus.Experimental
     public void setShadowAlpha(@FloatRange(from = 0.0f, to = 1.0f) float ambientShadowAlpha,
                                @FloatRange(from = 0.0f, to = 1.0f) float spotShadowAlpha) {
-        if (!(ambientShadowAlpha >= 0.0f && ambientShadowAlpha <= 1.0f)) {
-            throw new IllegalArgumentException("ambientShadowAlpha must be a valid alpha, "
-                    + ambientShadowAlpha + " is not in the range of 0.0f to 1.0f");
-        }
+        setAmbientShadowAlpha(ambientShadowAlpha);
+        setSpotShadowAlpha(spotShadowAlpha);
+    }
+
+    /**
+     * Configures the spot shadow alpha for children. This is the alpha used when the shadow
+     * has max alpha, and ramps down from the values provided to zero. The final color of the
+     * spot shadow also depends on the child's {@link View#getOutlineSpotShadowColor()}.
+     * <p>
+     * The initial values are provided by the current theme.
+     *
+     * @param spotShadowAlpha The alpha for the spot shadow.
+     * @since 3.13
+     */
+    public void setSpotShadowAlpha(@FloatRange(from = 0.0f, to = 1.0f) float spotShadowAlpha) {
         if (!(spotShadowAlpha >= 0.0f && spotShadowAlpha <= 1.0f)) {
             throw new IllegalArgumentException("spotShadowAlpha must be a valid alpha, "
                     + spotShadowAlpha + " is not in the range of 0.0f to 1.0f");
         }
-        mAmbientShadowAlpha = ambientShadowAlpha;
         mSpotShadowAlpha = spotShadowAlpha;
+    }
+
+    /**
+     * @return The shadow alpha set by {@link #setSpotShadowAlpha(float)}
+     */
+    public @FloatRange(from = 0.0f, to = 1.0f) float getSpotShadowAlpha() {
+        return mSpotShadowAlpha;
+    }
+
+    /**
+     * Configures the ambient shadow alpha for children. This is the alpha used when the shadow
+     * has max alpha, and ramps down from the values provided to zero. The final color of the
+     * ambient shadow also depends on the child's {@link View#getOutlineAmbientShadowColor()}.
+     * <p>
+     * The initial values are provided by the current theme.
+     *
+     * @param ambientShadowAlpha The alpha for the ambient shadow.
+     * @since 3.13
+     */
+    public void setAmbientShadowAlpha(@FloatRange(from = 0.0f, to = 1.0f) float ambientShadowAlpha) {
+        if (!(ambientShadowAlpha >= 0.0f && ambientShadowAlpha <= 1.0f)) {
+            throw new IllegalArgumentException("ambientShadowAlpha must be a valid alpha, "
+                    + ambientShadowAlpha + " is not in the range of 0.0f to 1.0f");
+        }
+        mAmbientShadowAlpha = ambientShadowAlpha;
+    }
+
+    /**
+     * @return The shadow alpha set by {@link #setAmbientShadowAlpha(float)}
+     */
+    public @FloatRange(from = 0.0f, to = 1.0f) float getAmbientShadowAlpha() {
+        return mAmbientShadowAlpha;
     }
 
     private void removeViewsInternal(int start, int count) {
@@ -2595,7 +2670,7 @@ public abstract class ViewGroup extends View implements ViewParent, ViewManager 
 
             onViewRemoved(view);
 
-            // Google bug, fixed by Modern UI
+            // Google bug, fixed by ModernUI
             if (!(mTransitioningViews != null && mTransitioningViews.contains(view))) {
                 view.mParent = null;
             }

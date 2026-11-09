@@ -1,25 +1,26 @@
 /*
- * Modern UI.
- * Copyright (C) 2022-2025 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2022-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package icyllis.modernui.material;
 
 import icyllis.modernui.annotation.NonNull;
 import icyllis.modernui.annotation.Nullable;
+import icyllis.modernui.graphics.Color;
 import icyllis.modernui.graphics.drawable.Drawable;
 import icyllis.modernui.util.ColorStateList;
 import org.jetbrains.annotations.ApiStatus;
@@ -31,17 +32,17 @@ import org.jetbrains.annotations.ApiStatus;
 public abstract class MaterialDrawable extends Drawable {
 
     protected ColorStateList mTint;
-    protected int mColor = ~0;
-    protected int mAlpha = 255;
+    protected long mColor = Color.WHITE_LONG;
+    protected float mAlpha = 1f;
 
     @Override
     public void setTintList(@Nullable ColorStateList tint) {
         if (mTint != tint) {
             mTint = tint;
             if (tint != null) {
-                mColor = tint.getColorForState(getState(), ~0);
+                mColor = tint.getColorForState(getState(), Color.WHITE_LONG);
             } else {
-                mColor = ~0;
+                mColor = Color.WHITE_LONG;
             }
             invalidateSelf();
         }
@@ -50,7 +51,7 @@ public abstract class MaterialDrawable extends Drawable {
     @Override
     protected boolean onStateChange(@NonNull int[] stateSet) {
         if (mTint != null) {
-            mColor = mTint.getColorForState(stateSet, ~0);
+            mColor = mTint.getColorForState(stateSet, Color.WHITE_LONG);
             return true;
         }
         return false;
@@ -67,7 +68,7 @@ public abstract class MaterialDrawable extends Drawable {
     }
 
     @Override
-    public void setAlpha(int alpha) {
+    public void setAlpha(float alpha) {
         if (mAlpha != alpha) {
             mAlpha = alpha;
             invalidateSelf();
@@ -75,7 +76,7 @@ public abstract class MaterialDrawable extends Drawable {
     }
 
     @Override
-    public int getAlpha() {
+    public float getAlpha() {
         return mAlpha;
     }
 }

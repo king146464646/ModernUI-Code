@@ -1,30 +1,30 @@
 /*
- * Modern UI.
- * Copyright (C) 2019-2022 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2022-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package icyllis.modernui.graphics;
 
 import icyllis.arc3d.core.Matrix4;
+import icyllis.modernui.annotation.ColorLong;
 import icyllis.modernui.annotation.FloatRange;
+import icyllis.modernui.annotation.NonNull;
+import icyllis.modernui.annotation.Nullable;
 import icyllis.modernui.view.View;
 import org.jetbrains.annotations.ApiStatus;
-
-import javax.annotation.Nonnull;
-import javax.annotation.Nullable;
 
 /**
  * Data structure that holds the properties for a RenderNode.
@@ -53,7 +53,7 @@ public class RenderProperties {
     private Matrix mAnimationMatrix; // copy or null
 
     private boolean mForceToLayer = false;
-    private int mLayerAlpha;
+    private float mLayerAlpha;
     private BlendMode mLayerMode = null;
 
     private int mLeft = 0, mTop = 0, mRight = 0, mBottom = 0;
@@ -70,6 +70,8 @@ public class RenderProperties {
     private boolean mMatrixOrPivotDirty = false;
     private float mCameraDistance = 1;
     private boolean mCameraDistanceExplicitlySet = false;
+    private long mSpotShadowColor = Color.BLACK_LONG;
+    private long mAmbientShadowColor = Color.BLACK_LONG;
 
     private final Outline mOutline = new Outline();
 
@@ -200,7 +202,7 @@ public class RenderProperties {
      */
     private boolean setLayerPaint(@Nullable Paint paint) {
         boolean changed = false;
-        int alpha = paint != null ? paint.getAlpha() : 0xFF;
+        float alpha = paint != null ? paint.getAlphaF() : 1f;
         if (mLayerAlpha != alpha) {
             mLayerAlpha = alpha;
             changed = true;
@@ -230,7 +232,7 @@ public class RenderProperties {
      *
      * @return the layer's alpha
      */
-    public int getLayerAlpha() {
+    public float getLayerAlpha() {
         return mLayerAlpha;
     }
 
@@ -895,6 +897,30 @@ public class RenderProperties {
         return false;
     }
 
+    public boolean setSpotShadowColor(@ColorLong long color) {
+        if (mSpotShadowColor != color) {
+            mSpotShadowColor = color;
+            return true;
+        }
+        return false;
+    }
+
+    public @ColorLong long getSpotShadowColor() {
+        return mSpotShadowColor;
+    }
+
+    public boolean setAmbientShadowColor(@ColorLong long color) {
+        if (mAmbientShadowColor != color) {
+            mAmbientShadowColor = color;
+            return true;
+        }
+        return false;
+    }
+
+    public @ColorLong long getAmbientShadowColor() {
+        return mAmbientShadowColor;
+    }
+
     /**
      * Sets the left position for the RenderNode.
      *
@@ -905,7 +931,7 @@ public class RenderProperties {
         if (mLeft != left) {
             mLeft = left;
             mWidth = mRight - left;
-            if (!mPivotExplicitlySet) {
+            if (!mPivotExplicitlySet || !mCameraDistanceExplicitlySet) {
                 mMatrixOrPivotDirty = true;
             }
             return true;
@@ -932,7 +958,7 @@ public class RenderProperties {
         if (mTop != top) {
             mTop = top;
             mHeight = mBottom - top;
-            if (!mPivotExplicitlySet) {
+            if (!mPivotExplicitlySet || !mCameraDistanceExplicitlySet) {
                 mMatrixOrPivotDirty = true;
             }
             return true;
@@ -959,7 +985,7 @@ public class RenderProperties {
         if (mRight != right) {
             mRight = right;
             mWidth = right - mLeft;
-            if (!mPivotExplicitlySet) {
+            if (!mPivotExplicitlySet || !mCameraDistanceExplicitlySet) {
                 mMatrixOrPivotDirty = true;
             }
             return true;
@@ -986,7 +1012,7 @@ public class RenderProperties {
         if (mBottom != bottom) {
             mBottom = bottom;
             mHeight = bottom - mTop;
-            if (!mPivotExplicitlySet) {
+            if (!mPivotExplicitlySet || !mCameraDistanceExplicitlySet) {
                 mMatrixOrPivotDirty = true;
             }
             return true;
@@ -1020,7 +1046,7 @@ public class RenderProperties {
             mBottom = bottom;
             mWidth = right - left;
             mHeight = bottom - top;
-            if (!mPivotExplicitlySet) {
+            if (!mPivotExplicitlySet || !mCameraDistanceExplicitlySet) {
                 mMatrixOrPivotDirty = true;
             }
             return true;
@@ -1034,7 +1060,7 @@ public class RenderProperties {
      * @param position The position rectangle in pixels
      * @return True if the value changed, false if the new value was the same as the previous value.
      */
-    public boolean setPosition(@Nonnull Rect position) {
+    public boolean setPosition(@NonNull Rect position) {
         return setPosition(position.left, position.top, position.right, position.bottom);
     }
 

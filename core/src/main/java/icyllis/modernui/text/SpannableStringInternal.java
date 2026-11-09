@@ -1,50 +1,37 @@
 /*
- * Modern UI.
- * Copyright (C) 2019-2021 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
- */
-
-/*
- * Copyright (C) 2010 The Android Open Source Project
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package icyllis.modernui.text;
 
 import icyllis.modernui.annotation.NonNull;
 import icyllis.modernui.annotation.Nullable;
+import icyllis.modernui.graphics.text.GetChars;
 import it.unimi.dsi.fastutil.ints.IntArrays;
 import it.unimi.dsi.fastutil.objects.ObjectArrays;
+import it.unimi.dsi.fastutil.objects.Reference2IntOpenHashMap;
 
 import java.util.*;
 import java.util.stream.IntStream;
 
 // modified version of https://android.googlesource.com/
 @SuppressWarnings("ForLoopReplaceableByForEach")
-abstract class SpannableStringInternal implements Spanned, GetChars {
+abstract sealed class SpannableStringInternal implements Spanned, GetChars
+        permits SpannableString, SpannedString {
 
     private static final int START = 0;
     private static final int END = 1;
@@ -56,11 +43,20 @@ abstract class SpannableStringInternal implements Spanned, GetChars {
     private int[] mSpanData;
     private int mSpanCount;
 
-    SpannableStringInternal(CharSequence source, int start, int end, boolean ignoreNoCopySpan) {
+    // ModernUI added:
+    // when span count is less than 16, linear search is faster and has a small footprint;
+    // otherwise, use open-addressing hash map to handle a large number of spans
+    private static final int HASHING_THRESHOLD = 16;
+    @Nullable
+    private Reference2IntOpenHashMap<Object> mIndexOfSpan;
+
+    // ModernUI changed: optimize substring, never copy NoCopySpan,
+    // never copy PARAGRAPH span if not at paragraph boundary
+    SpannableStringInternal(@NonNull CharSequence source, int start, int end) {
         if (start == 0 && end == source.length())
             mText = source.toString();
         else
-            mText = source.toString().substring(start, end);
+            mText = TextUtils.substring(source, start, end);
 
         mSpans = ObjectArrays.EMPTY_ARRAY;
         // Invariant: mSpanData.length = mSpans.length * COLUMNS
@@ -68,9 +64,9 @@ abstract class SpannableStringInternal implements Spanned, GetChars {
 
         if (source instanceof Spanned) {
             if (source instanceof SpannableStringInternal) {
-                copySpansFromInternal((SpannableStringInternal) source, start, end, ignoreNoCopySpan);
+                copySpansFromInternal((SpannableStringInternal) source, start, end);
             } else {
-                copySpansFromSpanned((Spanned) source, start, end, ignoreNoCopySpan);
+                copySpansFromSpanned((Spanned) source, start, end);
             }
         }
     }
@@ -81,14 +77,13 @@ abstract class SpannableStringInternal implements Spanned, GetChars {
      * @param src              Source object to copy from.
      * @param start            Start index in the source object.
      * @param end              End index in the source object.
-     * @param ignoreNoCopySpan whether to copy NoCopySpans in the {@code source}
      */
-    private void copySpansFromSpanned(@NonNull Spanned src, int start, int end, boolean ignoreNoCopySpan) {
+    private void copySpansFromSpanned(@NonNull Spanned src, int start, int end) {
         List<Object> spans = src.getSpans(start, end, Object.class);
 
         for (int i = 0; i < spans.size(); i++) {
             Object span = spans.get(i);
-            if (ignoreNoCopySpan && span instanceof NoCopySpan) {
+            if (span instanceof NoCopySpan) {
                 continue;
             }
             int st = src.getSpanStart(span);
@@ -100,7 +95,7 @@ abstract class SpannableStringInternal implements Spanned, GetChars {
             if (en > end)
                 en = end;
 
-            setSpan(span, st - start, en - start, fl, false/*enforceParagraph*/);
+            setSpan(false, span, st - start, en - start, fl, false/*enforceParagraph*/);
         }
     }
 
@@ -111,10 +106,8 @@ abstract class SpannableStringInternal implements Spanned, GetChars {
      * @param src              Source object to copy from.
      * @param start            Start index in the source object.
      * @param end              End index in the source object.
-     * @param ignoreNoCopySpan copy NoCopySpan for backward compatible reasons.
      */
-    private void copySpansFromInternal(@NonNull SpannableStringInternal src, int start, int end,
-                                       boolean ignoreNoCopySpan) {
+    private void copySpansFromInternal(@NonNull SpannableStringInternal src, int start, int end) {
         int count = 0;
         final int[] srcData = src.mSpanData;
         final Object[] srcSpans = src.mSpans;
@@ -127,9 +120,7 @@ abstract class SpannableStringInternal implements Spanned, GetChars {
             if (isOutOfCopyRange(start, end, spanStart, spanEnd)) continue;
             if (srcSpans[i] instanceof NoCopySpan) {
                 hasNoCopySpan = true;
-                if (ignoreNoCopySpan) {
-                    continue;
-                }
+                continue;
             }
             count++;
         }
@@ -137,30 +128,53 @@ abstract class SpannableStringInternal implements Spanned, GetChars {
         if (count == 0) return;
 
         if (!hasNoCopySpan && start == 0 && end == src.length()) {
-            mSpans = new Object[src.mSpans.length];
-            mSpanData = new int[src.mSpanData.length];
+            // ModernUI: also trim the array to size
+            assert count == src.mSpanCount;
             mSpanCount = src.mSpanCount;
-            System.arraycopy(src.mSpans, 0, mSpans, 0, src.mSpans.length);
-            System.arraycopy(src.mSpanData, 0, mSpanData, 0, mSpanData.length);
-        } else {
-            mSpanCount = count;
             mSpans = new Object[mSpanCount];
             mSpanData = new int[mSpans.length * COLUMNS];
-            for (int i = 0, j = 0; i < limit; i++) {
+            System.arraycopy(src.mSpans, 0, mSpans, 0, mSpans.length);
+            System.arraycopy(src.mSpanData, 0, mSpanData, 0, mSpanData.length);
+            if (src.mIndexOfSpan != null) {
+                mIndexOfSpan = new Reference2IntOpenHashMap<>(src.mIndexOfSpan);
+            }
+        } else {
+            mSpans = new Object[count];
+            mSpanData = new int[mSpans.length * COLUMNS];
+            int j = 0;
+            for (int i = 0; i < limit; i++) {
                 int spanStart = srcData[i * COLUMNS + START];
                 int spanEnd = srcData[i * COLUMNS + END];
+                int spanFlags = srcData[i * COLUMNS + FLAGS];
                 if (isOutOfCopyRange(start, end, spanStart, spanEnd)
-                        || (ignoreNoCopySpan && srcSpans[i] instanceof NoCopySpan)) {
+                        || (srcSpans[i] instanceof NoCopySpan)) {
                     continue;
                 }
-                if (spanStart < start) spanStart = start;
-                if (spanEnd > end) spanEnd = end;
+                // ModernUI added: paragraph boundary check
+                if ((spanFlags & Spannable.SPAN_PARAGRAPH) == Spannable.SPAN_PARAGRAPH) {
+                    if (isIndexFollowsNextLine(spanStart) || isIndexFollowsNextLine(spanEnd)) {
+                        continue;
+                    }
+                }
+                if (spanStart < start)
+                    spanStart = start;
+                if (spanEnd > end)
+                    spanEnd = end;
 
                 mSpans[j] = srcSpans[i];
                 mSpanData[j * COLUMNS + START] = spanStart - start;
                 mSpanData[j * COLUMNS + END] = spanEnd - start;
-                mSpanData[j * COLUMNS + FLAGS] = srcData[i * COLUMNS + FLAGS];
+                mSpanData[j * COLUMNS + FLAGS] = spanFlags;
                 j++;
+            }
+            assert j <= count;
+            mSpanCount = j;
+            if (j > HASHING_THRESHOLD) {
+                mIndexOfSpan = new Reference2IntOpenHashMap<>(j);
+                mIndexOfSpan.defaultReturnValue(-1);
+                for (int i = 0; i < j; i++) {
+                    mIndexOfSpan.put(mSpans[i], i);
+                }
             }
         }
     }
@@ -178,15 +192,12 @@ abstract class SpannableStringInternal implements Spanned, GetChars {
         return false;
     }
 
-    public void setSpan(@NonNull Object span, int start, int end, int flags) {
-        setSpan(span, start, end, flags, true);
-    }
-
     private boolean isIndexFollowsNextLine(int index) {
         return index != 0 && index != length() && charAt(index - 1) != '\n';
     }
 
-    private void setSpan(@NonNull Object span, int start, int end, int flags, boolean enforceParagraph) {
+    final void setSpan(boolean send, @NonNull Object span, int start, int end, int flags,
+                       boolean enforceParagraph) {
         Objects.requireNonNull(span, "span");
         if ((start | end - start | length() - end) < 0) {
             throw new IndexOutOfBoundsException(
@@ -215,12 +226,24 @@ abstract class SpannableStringInternal implements Spanned, GetChars {
             }
         }
 
-        int count = mSpanCount;
-        Object[] spans = mSpans;
-        int[] data = mSpanData;
+        final int count = mSpanCount;
+        final Object[] spans = mSpans;
+        final int[] data = mSpanData;
 
-        for (int i = 0; i < count; i++) {
-            if (spans[i] == span) {
+        // send is false only in constructor, we assume there are no duplicate span objects,
+        // so not only sendSpanChanged can be skipped, the whole block can be skipped
+        if (send) {
+            int i;
+            if (mIndexOfSpan != null) {
+                i = mIndexOfSpan.getInt(span);
+            } else {
+                for (i = count - 1; i >= 0; i--) {
+                    if (spans[i] == span) {
+                        break;
+                    }
+                }
+            }
+            if (i != -1) {
                 int ic = i * COLUMNS;
                 int ost = data[ic + START];
                 int oen = data[ic + END];
@@ -261,40 +284,62 @@ abstract class SpannableStringInternal implements Spanned, GetChars {
         mSpanData[ic + END] = end;
         mSpanData[ic + FLAGS] = flags;
         mSpanCount++;
+        if (mIndexOfSpan != null) {
+            mIndexOfSpan.put(span, count);
+        } else if (mSpanCount > HASHING_THRESHOLD) {
+            mIndexOfSpan = new Reference2IntOpenHashMap<>(mSpanCount);
+            mIndexOfSpan.defaultReturnValue(-1);
+            for (int i = 0; i < mSpanCount; i++) {
+                mIndexOfSpan.put(mSpans[i], i);
+            }
+        }
 
-        if (this instanceof Spannable) {
+        if (send) {
             sendSpanAdded(span, start, end);
         }
     }
 
-    public void removeSpan(@NonNull Object span) {
-        removeSpan(span, 0);
-    }
-
-    public void removeSpan(@NonNull Object span, int flags) {
+    void removeSpan(@NonNull Object span, int flags) {
         final int count = mSpanCount;
         final Object[] spans = mSpans;
         final int[] data = mSpanData;
 
-        for (int i = count - 1; i >= 0; i--) {
-            if (spans[i] == span) {
-                int ost = data[i * COLUMNS + START];
-                int oen = data[i * COLUMNS + END];
-
-                int c = count - (i + 1);
-
-                if (c != 0) {
-                    System.arraycopy(spans, i + 1, spans, i, c);
-                    System.arraycopy(data, (i + 1) * COLUMNS,
-                            data, i * COLUMNS, c * COLUMNS);
+        // ModernUI changed:
+        int i;
+        if (mIndexOfSpan != null) {
+            i = mIndexOfSpan.removeInt(span);
+        } else {
+            for (i = count - 1; i >= 0; i--) {
+                if (spans[i] == span) {
+                    break;
                 }
+            }
+        }
 
-                mSpanCount--;
+        if (i != -1) {
+            int ost = data[i * COLUMNS + START];
+            int oen = data[i * COLUMNS + END];
 
-                if ((flags & Spanned.SPAN_INTERMEDIATE) == 0) {
-                    sendSpanRemoved(span, ost, oen);
+            int c = count - (i + 1);
+
+            if (c != 0) {
+                System.arraycopy(spans, i + 1, spans, i, c);
+                System.arraycopy(data, (i + 1) * COLUMNS,
+                        data, i * COLUMNS, c * COLUMNS);
+            }
+
+            mSpanCount--;
+            // ModernUI added: also null out reference to avoid leak
+            spans[mSpanCount] = null;
+            // ModernUI changed:
+            if (mIndexOfSpan != null) {
+                for (int j = i; j < mSpanCount; j++) {
+                    mIndexOfSpan.put(spans[j], j);
                 }
-                return;
+            }
+
+            if ((flags & Spanned.SPAN_INTERMEDIATE) == 0) {
+                sendSpanRemoved(span, ost, oen);
             }
         }
     }
@@ -375,7 +420,7 @@ abstract class SpannableStringInternal implements Spanned, GetChars {
         } else {
             assert found == 1;
             assert first != null;
-            return List.of(first);
+            return Collections.singletonList(first);
         }
     }
 
@@ -436,35 +481,45 @@ abstract class SpannableStringInternal implements Spanned, GetChars {
         return !dest.isEmpty();
     }
 
+    // ModernUI added:
+    private int indexOfSpan(@NonNull Object span) {
+        int i;
+        if (mIndexOfSpan != null) {
+            i = mIndexOfSpan.getInt(span);
+        } else {
+            final Object[] spans = mSpans;
+            for (i = mSpanCount - 1; i >= 0; i--) {
+                if (spans[i] == span) {
+                    break;
+                }
+            }
+        }
+        return i;
+    }
+
     @Override
     public int getSpanStart(@NonNull Object span) {
-        final Object[] spans = mSpans;
-        for (int i = mSpanCount - 1; i >= 0; i--) {
-            if (spans[i] == span) {
-                return mSpanData[i * COLUMNS + START];
-            }
+        int i = indexOfSpan(span);
+        if (i != -1) {
+            return mSpanData[i * COLUMNS + START];
         }
         return -1;
     }
 
     @Override
     public int getSpanEnd(@NonNull Object span) {
-        final Object[] spans = mSpans;
-        for (int i = mSpanCount - 1; i >= 0; i--) {
-            if (spans[i] == span) {
-                return mSpanData[i * COLUMNS + END];
-            }
+        int i = indexOfSpan(span);
+        if (i != -1) {
+            return mSpanData[i * COLUMNS + END];
         }
         return -1;
     }
 
     @Override
     public int getSpanFlags(@NonNull Object span) {
-        final Object[] spans = mSpans;
-        for (int i = mSpanCount - 1; i >= 0; i--) {
-            if (spans[i] == span) {
-                return mSpanData[i * COLUMNS + FLAGS];
-            }
+        int i = indexOfSpan(span);
+        if (i != -1) {
+            return mSpanData[i * COLUMNS + FLAGS];
         }
         return 0;
     }
@@ -549,15 +604,21 @@ abstract class SpannableStringInternal implements Spanned, GetChars {
     // Same as SpannableStringBuilder
     @Override
     public boolean equals(Object o) {
-        if (o instanceof final Spanned other &&
-                toString().equals(o.toString())) {
+        if (o instanceof final Spanned other) {
+            // ModernUI changed:
+            if (other instanceof SpannableStringInternal) {
+                if (!mText.equals(other.toString())) {
+                    return false;
+                }
+            } else {
+                if (!mText.contentEquals(other)) {
+                    return false;
+                }
+            }
             // Check span data
             final List<?> otherSpans = other.getSpans(0, other.length(), Object.class);
             final List<?> spans = getSpans(0, length(), Object.class);
-            if (otherSpans.isEmpty() && spans.isEmpty()) {
-                return true;
-            } else if (!otherSpans.isEmpty() && !spans.isEmpty() &&
-                    otherSpans.size() == spans.size()) {
+            if (otherSpans.size() == spans.size()) {
                 // Do not check mSpanCount anymore for safety
                 for (int i = 0; i < spans.size(); ++i) {
                     final Object span = spans.get(i);

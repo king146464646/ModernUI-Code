@@ -17,6 +17,7 @@ out
 # gradle
 build
 .gradle
+.kotlin
 
 # other
 eclipse
@@ -26,8 +27,10 @@ classes
 *.psd
 *.log
 logs
+docs/javadoc
 
-/assets
+# private assets
+assets
 
-core/src/main/resources/assets/modernui/test/
-forge/src/main/java/icyllis/modernui/test/Main.java
+# CI
+.cifuzz-corpus

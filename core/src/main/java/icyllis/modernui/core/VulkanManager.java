@@ -1,19 +1,19 @@
 /*
- * Modern UI.
- * Copyright (C) 2019-2022 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2022-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package icyllis.modernui.core;
@@ -23,20 +23,20 @@ import icyllis.arc3d.engine.ContextOptions;
 import icyllis.arc3d.engine.ImmediateContext;
 import icyllis.arc3d.vulkan.VKUtil;
 import icyllis.arc3d.vulkan.VulkanBackendContext;
+import icyllis.arc3d.vulkan.VulkanMemoryAllocator;
 import icyllis.modernui.annotation.NonNull;
 import icyllis.modernui.annotation.Nullable;
 import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
+import org.jetbrains.annotations.ApiStatus;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.glfw.GLFWVulkan;
 import org.lwjgl.system.MemoryStack;
-import org.lwjgl.util.tinyfd.TinyFileDialogs;
 import org.lwjgl.vulkan.*;
 
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
 
 import static icyllis.arc3d.vulkan.VKUtil.*;
-import static icyllis.modernui.core.Core.MARKER;
 import static icyllis.modernui.util.Log.LOGGER;
 import static org.lwjgl.system.MemoryUtil.*;
 import static org.lwjgl.vulkan.EXTBlendOperationAdvanced.VK_EXT_BLEND_OPERATION_ADVANCED_EXTENSION_NAME;
@@ -47,6 +47,7 @@ import static org.lwjgl.vulkan.VK11.*;
  * which are re-used by CanvasContext. This class is created once and should be used by all vulkan
  * windowing contexts. The VulkanManager must be initialized before use.
  */
+@ApiStatus.Internal
 public final class VulkanManager implements AutoCloseable {
 
     private static volatile VulkanManager sInstance;
@@ -62,13 +63,16 @@ public final class VulkanManager implements AutoCloseable {
     private final Object2IntOpenHashMap<String> mDeviceExtensions = new Object2IntOpenHashMap<>();
     private VkPhysicalDeviceFeatures2 mPhysicalDeviceFeatures2;
 
+    private int mPhysicalDeviceVersion;
     private int mDriverVersion;
+
+    private VulkanMemoryAllocator mMemoryAllocator;
 
     private VulkanManager() {
     }
 
     @NonNull
-    public static VulkanManager getInstance() {
+    public static VulkanManager get() {
         if (sInstance == null) {
             synchronized (VulkanManager.class) {
                 if (sInstance == null) {
@@ -90,10 +94,10 @@ public final class VulkanManager implements AutoCloseable {
         }
 
         if (!GLFWVulkan.glfwVulkanSupported()) {
-            TinyFileDialogs.tinyfd_messageBox("Failed to launch Modern UI",
+            /*TinyFileDialogs.tinyfd_messageBox("Failed to launch ModernUI",
                     "Vulkan is not supported on your current platform. " +
                             "Make sure your operating system and graphics card drivers are up-to-date.",
-                    "ok", "error", true);
+                    "ok", "error", true);*/
             throw new RuntimeException("Vulkan is not supported");
         }
 
@@ -103,19 +107,19 @@ public final class VulkanManager implements AutoCloseable {
                 VK_VERSION_MAJOR(version), VK_VERSION_MINOR(version), VK_VERSION_PATCH(version));
 
         if (version < VK_API_VERSION_1_1) {
-            TinyFileDialogs.tinyfd_messageBox("Failed to launch Modern UI",
+            /*TinyFileDialogs.tinyfd_messageBox("Failed to launch ModernUI",
                     "Vulkan 1.1 is not supported on your current platform. " +
                             "Make sure your operating system and graphics card drivers are up-to-date.",
-                    "ok", "error", true);
+                    "ok", "error", true);*/
             throw new RuntimeException("Vulkan 1.1 is not supported");
         }
 
         try (MemoryStack stack = MemoryStack.stackPush()) {
             final IntBuffer pCount = stack.mallocInt(1);
-            _CHECK_(vkEnumerateInstanceExtensionProperties((ByteBuffer) null, pCount, null));
+            VKUtil._CHECK_(vkEnumerateInstanceExtensionProperties((ByteBuffer) null, pCount, null));
             final int count = pCount.get(0);
             final VkExtensionProperties.Buffer properties = VkExtensionProperties.malloc(count, stack);
-            _CHECK_(vkEnumerateInstanceExtensionProperties((ByteBuffer) null, pCount, properties));
+            VKUtil._CHECK_(vkEnumerateInstanceExtensionProperties((ByteBuffer) null, pCount, properties));
             for (var prop : properties) {
                 mInstanceExtensions.putIfAbsent(prop.extensionNameString(), prop.specVersion());
             }
@@ -123,12 +127,12 @@ public final class VulkanManager implements AutoCloseable {
 
         LOGGER.info(MARKER, "Enumerated {} instance extensions", mInstanceExtensions.size());
         if (LOGGER.isDebugEnabled(MARKER)) {
-            LOGGER.debug(MARKER, mInstanceExtensions.toString());
+            LOGGER.debug(MARKER, String.valueOf(mInstanceExtensions));
         }
 
         try (MemoryStack stack = MemoryStack.stackPush()) {
-            final ByteBuffer appName = stack.UTF8("Modern UI", true);
-            final ByteBuffer engineName = stack.UTF8("Arc 3D", true);
+            final ByteBuffer appName = stack.UTF8("ModernUI", true);
+            final ByteBuffer engineName = stack.UTF8("Arc3D", true);
             final VkApplicationInfo appInfo = VkApplicationInfo
                     .calloc(stack)
                     .sType$Default()
@@ -144,56 +148,60 @@ public final class VulkanManager implements AutoCloseable {
                     .ppEnabledExtensionNames(GLFWVulkan.glfwGetRequiredInstanceExtensions());
 
             final PointerBuffer pInstance = stack.mallocPointer(1);
-            _CHECK_ERROR_(vkCreateInstance(pCreateInfo, null, pInstance));
+            VKUtil._CHECK_ERROR_(vkCreateInstance(pCreateInfo, null, pInstance));
             mInstance = new VkInstance(pInstance.get(0), pCreateInfo);
         }
 
-        LOGGER.info(MARKER, "Created Vulkan instance, Engine: {}", "Arc 3D");
+        LOGGER.info(MARKER, "Created Vulkan instance, Engine: {}", "Arc3D");
 
         try (MemoryStack stack = MemoryStack.stackPush()) {
             final IntBuffer pCount = stack.mallocInt(1);
-            _CHECK_(vkEnumeratePhysicalDevices(mInstance, pCount, null));
+            VKUtil._CHECK_(vkEnumeratePhysicalDevices(mInstance, pCount, null));
             final int deviceCount = pCount.get(0);
             if (deviceCount == 0) {
                 throw new RuntimeException("No GPU device was found");
             }
             final PointerBuffer pPhysicalDevices = stack.mallocPointer(deviceCount);
-            _CHECK_(vkEnumeratePhysicalDevices(mInstance, pCount, pPhysicalDevices));
+            VKUtil._CHECK_(vkEnumeratePhysicalDevices(mInstance, pCount, pPhysicalDevices));
+            boolean found = false;
             for (int i = 0; i < deviceCount; i++) {
                 final var physicalDevice = new VkPhysicalDevice(pPhysicalDevices.get(i), mInstance);
-                if (choosePhysicalDeviceLocked(physicalDevice)) {
-                    break;
-                }
+                found = choosePhysicalDeviceLocked(physicalDevice, found);
             }
         }
 
         if (mPhysicalDevice == null) {
-            TinyFileDialogs.tinyfd_messageBox("Failed to launch Modern UI",
+            /*TinyFileDialogs.tinyfd_messageBox("Failed to launch ModernUI",
                     "You don't have a device with a Vulkan queue family that supports both graphics and compute.",
-                    "ok", "error", true);
+                    "ok", "error", true);*/
             throw new RuntimeException("No suitable physical device was found");
         }
 
         final PointerBuffer extensionNames;
         try (MemoryStack stack = MemoryStack.stackPush()) {
             final IntBuffer pCount = stack.mallocInt(1);
-            _CHECK_(vkEnumerateDeviceExtensionProperties(mPhysicalDevice, (ByteBuffer) null, pCount, null));
+            VKUtil._CHECK_(vkEnumerateDeviceExtensionProperties(mPhysicalDevice, (ByteBuffer) null, pCount, null));
             final int count = pCount.get(0);
             final VkExtensionProperties.Buffer properties = VkExtensionProperties.malloc(count, stack);
-            _CHECK_(vkEnumerateDeviceExtensionProperties(mPhysicalDevice, (ByteBuffer) null, pCount, properties));
+            VKUtil._CHECK_(vkEnumerateDeviceExtensionProperties(mPhysicalDevice, (ByteBuffer) null, pCount,
+                    properties));
             extensionNames = memAllocPointer(count);
             for (var prop : properties) {
+                String name = prop.extensionNameString();
                 extensionNames.put(prop.extensionName());
-                mDeviceExtensions.putIfAbsent(prop.extensionNameString(), prop.specVersion());
+                mDeviceExtensions.putIfAbsent(name, prop.specVersion());
             }
             extensionNames.flip();
         }
 
         LOGGER.info(MARKER, "Enumerated {} device extensions", mDeviceExtensions.size());
         if (LOGGER.isDebugEnabled(MARKER)) {
-            LOGGER.debug(MARKER, mDeviceExtensions.toString());
+            LOGGER.debug(MARKER, String.valueOf(mDeviceExtensions));
         }
 
+        if (mPhysicalDeviceFeatures2 != null) {
+            throw new IllegalStateException();
+        }
         mPhysicalDeviceFeatures2 = VkPhysicalDeviceFeatures2
                 .calloc()
                 .sType$Default();
@@ -221,12 +229,12 @@ public final class VulkanManager implements AutoCloseable {
             final VkDeviceCreateInfo pCreateInfo = VkDeviceCreateInfo
                     .calloc(stack)
                     .sType$Default()
-                    .pNext(mPhysicalDeviceFeatures2)
+                    .pNext(mPhysicalDeviceFeatures2.address())
                     .pQueueCreateInfos(queueInfos)
                     .ppEnabledExtensionNames(extensionNames);
 
             final PointerBuffer pDevice = stack.mallocPointer(1);
-            _CHECK_(vkCreateDevice(mPhysicalDevice, pCreateInfo, null, pDevice));
+            VKUtil._CHECK_(vkCreateDevice(mPhysicalDevice, pCreateInfo, null, pDevice));
             mDevice = new VkDevice(pDevice.get(0), mPhysicalDevice, pCreateInfo, VK_API_VERSION_1_1);
         } finally {
             memFree(extensionNames);
@@ -235,16 +243,23 @@ public final class VulkanManager implements AutoCloseable {
         LOGGER.info(MARKER, "Created Vulkan device, Queue index: {}", mGraphicsQueueIndex);
     }
 
-    private boolean choosePhysicalDeviceLocked(@NonNull VkPhysicalDevice physicalDevice) {
+    private boolean choosePhysicalDeviceLocked(VkPhysicalDevice physicalDevice, boolean printOnly) {
         try (MemoryStack stack = MemoryStack.stackPush()) {
             final VkPhysicalDeviceProperties2 properties2 = VkPhysicalDeviceProperties2
                     .calloc(stack)
                     .sType$Default();
             vkGetPhysicalDeviceProperties2(physicalDevice, properties2);
             final VkPhysicalDeviceProperties properties = properties2.properties();
+            int apiVersion = properties.apiVersion();
 
-            LOGGER.info(MARKER, "List device ID {}, Name: {}, Type: {}", properties.deviceID(),
-                    properties.deviceNameString(), getPhysicalDeviceTypeName(properties.deviceType()));
+            LOGGER.info(MARKER, "List device ID {}, Name: {}, API Version: {}.{}.{}, Type: {}", properties.deviceID(),
+                    properties.deviceNameString(),
+                    VK_VERSION_MAJOR(apiVersion), VK_VERSION_MINOR(apiVersion), VK_VERSION_PATCH(apiVersion),
+                    VKUtil.getPhysicalDeviceTypeName(properties.deviceType()));
+
+            if (printOnly) {
+                return true;
+            }
 
             if (properties.apiVersion() < VK_API_VERSION_1_1) {
                 LOGGER.info(MARKER, "Skip device ID {} because it does not support Vulkan 1.1",
@@ -291,11 +306,12 @@ public final class VulkanManager implements AutoCloseable {
             mPhysicalDevice = physicalDevice;
             int vendorID = properties.vendorID();
             int driverVersion = properties.driverVersion();
+            mPhysicalDeviceVersion = properties.apiVersion();
             mDriverVersion = driverVersion;
             LOGGER.info(MARKER, "Choose device ID {}, vendor ID: {}, driver version: {}",
                     properties.deviceID(), VKUtil.getVendorIDName(vendorID),
                     switch (vendorID) {
-                        case VKUtil.kNVIDIA_VendorID -> String.format("%d.%d.%d.%d", // NVIDIA
+                        case VKUtil.kNVIDIA_VendorID -> String.format("%d.%d.%d.%d",
                                 driverVersion >>> 22,
                                 (driverVersion >>> 14) & 0xFF,
                                 (driverVersion >> 6) & 0xFF,
@@ -313,14 +329,84 @@ public final class VulkanManager implements AutoCloseable {
         backendContext.mInstance = mInstance;
         backendContext.mPhysicalDevice = mPhysicalDevice;
         backendContext.mDevice = mDevice;
-        //TODO
         backendContext.mGraphicsQueueIndex = mGraphicsQueueIndex;
         backendContext.mDeviceFeatures2 = mPhysicalDeviceFeatures2;
+        if (mMemoryAllocator == null) {
+            mMemoryAllocator = VulkanMemoryAllocator.make(
+                    mInstance, mPhysicalDevice, mDevice, mPhysicalDeviceVersion,
+                    0
+            );
+        }
+        backendContext.mMemoryAllocator = mMemoryAllocator;
+        try (var stack = MemoryStack.stackPush()) {
+            var pQueue = stack.mallocPointer(1);
+            vkGetDeviceQueue(mDevice, mGraphicsQueueIndex, 0, pQueue);
+            backendContext.mQueue = new VkQueue(pQueue.get(0), mDevice);
+        }
         return VKUtil.makeVulkan(backendContext, options);
+    }
+
+    // transfer ownership
+    public void setMemoryAllocator(VulkanMemoryAllocator memoryAllocator) {
+        if (mMemoryAllocator == null) {
+            mMemoryAllocator = memoryAllocator;
+        } else {
+            throw new IllegalStateException();
+        }
+    }
+
+    // memory is managed by this
+    public VulkanMemoryAllocator getMemoryAllocator() {
+        return mMemoryAllocator;
+    }
+
+    /**
+     * @return the vendor-specified version of the driver
+     */
+    public int getDriverVersion() {
+        return mDriverVersion;
+    }
+
+    public VkInstance getInstance() {
+        return mInstance;
+    }
+
+    public VkPhysicalDevice getPhysicalDevice() {
+        return mPhysicalDevice;
+    }
+
+    public VkDevice getDevice() {
+        return mDevice;
+    }
+
+    public int getGraphicsQueueIndex() {
+        return mGraphicsQueueIndex;
+    }
+
+    public int getPhysicalDeviceVersion() {
+        return mPhysicalDeviceVersion;
+    }
+
+    // transfer ownership
+    public void setPhysicalDeviceFeatures2(VkPhysicalDeviceFeatures2 physicalDeviceFeatures2) {
+        if (mPhysicalDeviceFeatures2 == null) {
+            mPhysicalDeviceFeatures2 = physicalDeviceFeatures2;
+        } else {
+            throw new IllegalStateException();
+        }
+    }
+
+    // memory is managed by this
+    public VkPhysicalDeviceFeatures2 getPhysicalDeviceFeatures2() {
+        return mPhysicalDeviceFeatures2;
     }
 
     @Override
     public synchronized void close() {
+        if (mMemoryAllocator != null) {
+            mMemoryAllocator.close();
+        }
+
         if (mDevice != null) {
             vkDeviceWaitIdle(mDevice);
             vkDestroyDevice(mDevice, null);
@@ -335,6 +421,7 @@ public final class VulkanManager implements AutoCloseable {
         mDevice = null;
         mPhysicalDevice = null;
         mInstance = null;
+        mMemoryAllocator = null;
         mInstanceExtensions.clear();
         mInstanceExtensions.trim();
         mDeviceExtensions.clear();
@@ -349,19 +436,12 @@ public final class VulkanManager implements AutoCloseable {
     }
 
     /**
-     * @return the vendor-specified version of the driver
-     */
-    public int getDriverVersion() {
-        return mDriverVersion;
-    }
-
-    /**
      * All Vulkan structs that could be part of the features chain will start with the
-     * structure type followed by the pNext pointer. We cast to the CommonVulkanHeader,
+     * structure type followed by the pNext pointer. We cast to the VkBaseInStructure,
      * so we can get access to the pNext for the next struct.
      *
      * <pre>{@code
-     * struct CommonVulkanHeader {
+     * struct VkBaseInStructure {
      *         VkStructureType sType;
      *         void* pNext;
      *     };

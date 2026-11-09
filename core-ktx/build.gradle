@@ -3,11 +3,35 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompilationTask
 
 apply plugin: 'org.jetbrains.kotlin.jvm'
 
-kotlin.jvmToolchain(17)
+kotlin.jvmToolchain(25)
 
 dependencies {
-    api project(':ModernUI-Core')
+    api project(':modernui-core')
     testImplementation "org.slf4j:slf4j-simple:${slf4j_version}"
+
+    testImplementation "org.lwjgl:lwjgl:${lwjgl_version}"
+    testImplementation "org.lwjgl:lwjgl-glfw:${lwjgl_version}"
+    testImplementation "org.lwjgl:lwjgl-jemalloc:${lwjgl_version}"
+    testImplementation "org.lwjgl:lwjgl-openal:${lwjgl_version}"
+    testImplementation "org.lwjgl:lwjgl-opengl:${lwjgl_version}"
+    testImplementation "org.lwjgl:lwjgl-opengles:${lwjgl_version}"
+    testImplementation "org.lwjgl:lwjgl-stb:${lwjgl_version}"
+    testImplementation "org.lwjgl:lwjgl-tinyfd:${lwjgl_version}"
+    testImplementation "org.lwjgl:lwjgl-vma:${lwjgl_version}"
+    testImplementation "org.lwjgl:lwjgl-vulkan:${lwjgl_version}"
+
+    testRuntimeOnly "org.lwjgl:lwjgl:${lwjgl_version}:${rootProject.ext.lwjglNatives}"
+    testRuntimeOnly "org.lwjgl:lwjgl-glfw:${lwjgl_version}:${rootProject.ext.lwjglNatives}"
+    testRuntimeOnly "org.lwjgl:lwjgl-jemalloc:${lwjgl_version}:${rootProject.ext.lwjglNatives}"
+    testRuntimeOnly "org.lwjgl:lwjgl-openal:${lwjgl_version}:${rootProject.ext.lwjglNatives}"
+    testRuntimeOnly "org.lwjgl:lwjgl-opengl:${lwjgl_version}:${rootProject.ext.lwjglNatives}"
+    testRuntimeOnly "org.lwjgl:lwjgl-opengles:${lwjgl_version}:${rootProject.ext.lwjglNatives}"
+    testRuntimeOnly "org.lwjgl:lwjgl-stb:${lwjgl_version}:${rootProject.ext.lwjglNatives}"
+    testRuntimeOnly "org.lwjgl:lwjgl-tinyfd:${lwjgl_version}:${rootProject.ext.lwjglNatives}"
+    testRuntimeOnly "org.lwjgl:lwjgl-vma:${lwjgl_version}:${rootProject.ext.lwjglNatives}"
+    if (rootProject.ext.lwjglNatives == "natives-macos" || rootProject.ext.lwjglNatives == "natives-macos-arm64") {
+        testRuntimeOnly "org.lwjgl:lwjgl-vulkan:${lwjgl_version}:${rootProject.ext.lwjglNatives}"
+    }
 }
 
 // for IntelliJ IDEA, you must set up this in IDEA Settings, Kotlin Compiler
@@ -22,40 +46,23 @@ tasks.withType(KotlinCompilationTask).configureEach {
     }
 }
 
-jar {
-    manifest {
-        attributes(
-                "Specification-Title": project.name,
-                "Specification-Vendor": "BloCamLimb",
-                "Specification-Version": "1",
-                "Implementation-Title": project.name,
-                "Implementation-Version": project.version,
-                "Implementation-Vendor": "BloCamLimb",
-                "Implementation-Timestamp": new Date().format("yyyy-MM-dd'T'HH:mm:ssZ"),
-        )
-    }
-}
-
 publishing {
     publications {
-        mavenCoreKTX(MavenPublication) {
+        mavenJava(MavenPublication) {
             from components.java
-            artifactId = project.name
-            groupId = project.group
-            version = project.version
 
             pom {
-                artifactId = project.name
-                groupId = project.group
-                version = project.version
-                name = rootProject.name
-                packaging = 'pom'
+                name = 'ModernUI Kotlin Extension'
+                description = 'Kotlin extensions and utilities for ModernUI.'
+                url = project.modernui_url
                 scm {
-                    url = 'https://github.com/BloCamLimb/ModernUI.git'
+                    connection = project.modernui_scm_connection
+                    developerConnection = project.modernui_scm_developerConnection
+                    url = project.modernui_scm_url
                 }
                 issueManagement {
-                    system = 'github'
-                    url = 'https://github.com/BloCamLimb/ModernUI/issues'
+                    system = project.modernui_issueManagement_system
+                    url = project.modernui_issueManagement_url
                 }
                 licenses {
                     license {
@@ -64,7 +71,20 @@ publishing {
                         distribution = 'repo'
                     }
                 }
+                developers {
+                    developer {
+                        id = project.modernui_developer_id
+                        name = project.modernui_developer_name
+                        email = project.modernui_developer_email
+                        url = project.modernui_developer_url
+                    }
+                }
             }
         }
     }
+}
+
+signing {
+    useGpgCmd()
+    sign(publishing.publications["mavenJava"])
 }

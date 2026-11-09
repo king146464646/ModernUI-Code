@@ -1,19 +1,19 @@
 /*
- * Modern UI.
- * Copyright (C) 2025 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2025-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package icyllis.modernui.resources;
@@ -23,6 +23,7 @@ import icyllis.modernui.annotation.ColorInt;
 import icyllis.modernui.annotation.NonNull;
 import icyllis.modernui.annotation.Nullable;
 import icyllis.modernui.annotation.StyleableRes;
+import icyllis.modernui.graphics.Color;
 import icyllis.modernui.graphics.drawable.Drawable;
 import icyllis.modernui.util.ColorStateList;
 import icyllis.modernui.util.DisplayMetrics;
@@ -36,7 +37,6 @@ public class TypedArray {
         }
 
         attrs.mRecycled = false;
-        attrs.mMetrics = res.getDisplayMetrics();
         attrs.resize(len);
         return attrs;
     }
@@ -48,11 +48,12 @@ public class TypedArray {
     static final int STYLE_FLAGS = 3;
 
     private final Resources mResources;
-    private DisplayMetrics mMetrics;
 
     private boolean mRecycled;
 
     Resources.Theme mTheme;
+    DisplayMetrics mMetrics;
+    AssetManager mAssetManager;
 
     int[] mData;
     int[] mIndices;
@@ -264,12 +265,15 @@ public class TypedArray {
         } else if (type >= TypedValue.TYPE_FIRST_INT
                 && type <= TypedValue.TYPE_LAST_INT) {
             return data[index + STYLE_DATA];
-        } else if (type == TypedValue.TYPE_STRING) {
+        } else if (type == TypedValue.TYPE_STRING ||
+                type == TypedValue.TYPE_FACTORY) {
             final TypedValue value = mValue;
             if (getValueAt(index, value)) {
                 final ColorStateList csl = mResources.loadColorStateList(
-                        value, mTheme);
-                return csl.getDefaultColor();
+                        value, null, mTheme);
+                if (csl != null) {
+                    return Color.toArgb(csl.getDefaultColor());
+                }
             }
             return defValue;
         } else if (type == TypedValue.TYPE_ATTRIBUTE) {
@@ -315,7 +319,7 @@ public class TypedArray {
                         "Failed to resolve attribute at index " + index + ": " + value
                                 + ", theme=" + mTheme);
             }
-            return mResources.loadColorStateList(value, mTheme);
+            return mResources.loadColorStateList(value, null, mTheme);
         }
         return null;
     }
@@ -608,17 +612,17 @@ public class TypedArray {
         index *= STYLE_NUM_ENTRIES;
         final int[] data = mData;
         final int type = data[index + STYLE_TYPE];
-        switch (type & ResourceTypes.Res_value.TYPE_MASK) {
+        switch (type & ResourceTypes.Res_value.DATA_TYPE_MASK) {
             case TypedValue.TYPE_REFERENCE -> {
-                int typeId = type >>> ResourceTypes.Res_value.TYPE_ID_SHIFT;
+                int typeId = type >>> ResourceTypes.Res_value.DATA_TYPE_ID_SHIFT;
                 if (typeId != 0) {
-                    return mResources.getReferenceIdForCookie(data[index + STYLE_COOKIE], typeId, data[index + STYLE_DATA]);
+                    return mAssetManager.getReferenceIdForCookie(data[index + STYLE_COOKIE], typeId, data[index + STYLE_DATA]);
                 } else {
                     return null;
                 }
             }
             case TypedValue.TYPE_ATTRIBUTE -> {
-                return mResources.getAttributeIdForCookie(data[index + STYLE_COOKIE], data[index + STYLE_DATA]);
+                return mAssetManager.getAttributeIdForCookie(data[index + STYLE_COOKIE], data[index + STYLE_DATA]);
             }
         }
         return null;
@@ -773,9 +777,9 @@ public class TypedArray {
 
         mRecycled = true;
 
-        // These may have been set by the client.
+        // These are heavy objects may have been set by the client.
         mTheme = null;
-        mValue.object = null;
+        mAssetManager = null;
 
         mResources.mTypedArrayPool.release(this);
     }
@@ -790,28 +794,10 @@ public class TypedArray {
         outValue.data = data[offset + STYLE_DATA];
         outValue.cookie = data[offset + STYLE_COOKIE];
         outValue.flags = data[offset + STYLE_FLAGS];
-        switch (type & ResourceTypes.Res_value.TYPE_MASK) {
-            case TypedValue.TYPE_STRING -> {
-                outValue.object = loadStringValueAt(offset);
-            }
-            case TypedValue.TYPE_REFERENCE -> {
-                int typeId = type >>> ResourceTypes.Res_value.TYPE_ID_SHIFT;
-                if (typeId != 0) {
-                    outValue.type = TypedValue.TYPE_REFERENCE;
-                    outValue.object = mResources.getReferenceIdForCookie(outValue.cookie, typeId, outValue.data);
-                } else {
-                    outValue.object = null;
-                }
-            }
-            case TypedValue.TYPE_ATTRIBUTE -> {
-                outValue.object = mResources.getAttributeIdForCookie(outValue.cookie, outValue.data);
-            }
-            default -> outValue.object = null;
-        }
-        return true;
+        return mAssetManager.postProcess(outValue);
     }
 
-    @Nullable
+    /*@Nullable
     private CharSequence loadStringValueAt(int index) {
         final int[] data = mData;
         final int cookie = data[index + STYLE_COOKIE];
@@ -820,10 +806,11 @@ public class TypedArray {
             value = mResources.getPooledStringForCookie(cookie, data[index + STYLE_DATA]);
         }
         return value;
-    }
+    }*/
 
     protected TypedArray(Resources resources) {
         mResources = resources;
         mMetrics = mResources.getDisplayMetrics();
+        mAssetManager = mResources.getImpl().mAssetManager;
     }
 }

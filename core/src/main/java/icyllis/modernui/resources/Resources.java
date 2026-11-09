@@ -1,19 +1,19 @@
 /*
- * Modern UI.
- * Copyright (C) 2019-2023 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2019-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package icyllis.modernui.resources;
@@ -24,75 +24,83 @@ import icyllis.modernui.annotation.NonNull;
 import icyllis.modernui.annotation.Nullable;
 import icyllis.modernui.annotation.StyleRes;
 import icyllis.modernui.annotation.StyleableRes;
-import icyllis.modernui.graphics.drawable.ColorDrawable;
+import icyllis.modernui.graphics.Image;
 import icyllis.modernui.graphics.drawable.Drawable;
 import icyllis.modernui.resources.AssetManager.ResolvedBag;
 import icyllis.modernui.resources.ResourceTypes.Res_value;
 import icyllis.modernui.util.AttributeSet;
 import icyllis.modernui.util.ColorStateList;
 import icyllis.modernui.util.DisplayMetrics;
-import icyllis.modernui.util.Log;
 import icyllis.modernui.util.Pools;
 import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
 import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.CheckReturnValue;
 import org.jetbrains.annotations.Contract;
+import org.jetbrains.annotations.UnmodifiableView;
 import org.slf4j.Marker;
 import org.slf4j.MarkerFactory;
 
+import javax.annotation.concurrent.GuardedBy;
 import javax.annotation.concurrent.ThreadSafe;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
+import java.lang.ref.WeakReference;
+import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.function.BiFunction;
+import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
-import static icyllis.modernui.resources.AssetManager.kMaxIterations;
-
-@ApiStatus.Experimental
+@ThreadSafe
 public class Resources {
 
     public static final Marker MARKER = MarkerFactory.getMarker("Resources");
-    public static final String DEFAULT_NAMESPACE = R.ns;
 
-    private final DisplayMetrics mMetrics = new DisplayMetrics();
+    private static final Object sLock = new Object();
+
+    @GuardedBy("sLock")
+    private static Resources sSystem;
+
+
+    // nonfair RW lock
+    private final ReentrantReadWriteLock mLock = new ReentrantReadWriteLock();
+
+    @GuardedBy("mLock")
+    private ResourcesImpl mResourcesImpl;
 
     final Pools.SynchronizedPool<TypedArray> mTypedArrayPool = new Pools.SynchronizedPool<>(5);
 
-    String[] mNamespaces = {DEFAULT_NAMESPACE};
-    String[] mTypeStrings;
-    String[] mKeyStrings;
-    Object[] mGlobalObjects;
 
-    String[] mStyleKeys;
-    int[] mStyleOffsets;
 
-    static final int MAP_ENTRY_HEADER_COLUMNS = 2;
-    static final int MAP_COLUMNS = 3;
 
-    static final int MAP_ENTRY_PARENT = 0;
-    static final int MAP_ENTRY_COUNT = 1;
-    static final int MAP_ENTRY_ENTRIES = 2;
 
-    static final int MAP_NAME = 0;
-    static final int MAP_DATA_TYPE = 1;
-    static final int MAP_DATA = 2;
+    private static final VarHandle TMP_VALUE;
 
-    /*
-        this is defined as:
-    struct map_entry {
-        int32_t parent; // index of keyStrings
-        int32_t count;
-        struct map {
-            uint32_t name;
-            uint32_t dataType;
-            uint32_t data;
-        } entries[count];
-    } data[0];
+    static {
+        try {
+            TMP_VALUE = MethodHandles.lookup().findVarHandle(Resources.class, "mTmpValue", TypedValue.class);
+        } catch (NoSuchFieldException | IllegalAccessException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @SuppressWarnings("FieldMayBeFinal")
+    private volatile TypedValue mTmpValue = new TypedValue();
+
+
+    /**
+     * WeakReferences to Themes that were constructed from this Resources object.
+     * We keep track of these in case our underlying implementation is changed, in which case
+     * the Themes must also get updated ThemeImpls.
      */
-    int[] mData;
+    @GuardedBy("mLock")
+    private final ArrayList<WeakReference<Theme>> mThemeRefs = new ArrayList<>();
 
-    Object2ObjectOpenHashMap<String, ResolvedBag> mCachedBags = new Object2ObjectOpenHashMap<>();
 
     /**
      * Returns a default theme for the framework.
      *
+     * @hide
      * @hidden
      * @param curTheme The current theme, or null if not specified.
      * @return A theme resource identifier
@@ -106,335 +114,365 @@ public class Resources {
     }
 
     /**
-     * This exception is thrown by the resource APIs when a requested resource
-     * can not be found.
+     * @hide
+     * @hidden
      */
-    public static class NotFoundException extends RuntimeException {
-        public NotFoundException() {
-        }
-
-        public NotFoundException(String message) {
-            super(message);
-        }
-
-        public NotFoundException(String message, Exception cause) {
-            super(message, cause);
-        }
-    }
-
-    public Resources() {
-        mMetrics.setToDefaults();
-    }
-
     @ApiStatus.Internal
-    public void updateMetrics(DisplayMetrics metrics) {
-        if (metrics != null) {
-            mMetrics.setTo(metrics);
-        }
+    public interface UpdateCallbacks extends ResourcesLoader.UpdateCallbacks {
+        /**
+         * Invoked when a {@link Resources} instance has a {@link ResourcesLoader} added, removed,
+         * or reordered.
+         *
+         * @param resources the instance being updated
+         * @param newLoaders the new set of loaders for the instance
+         */
+        void onLoadersChanged(@NonNull Resources resources,
+                              @NonNull List<ResourcesLoader> newLoaders);
     }
 
-    public final Theme newTheme() {
-        return new Theme();
+    /**
+     * @hide
+     * @hidden
+     */
+    @ApiStatus.Internal
+    public Resources(@NonNull AssetManager assetManager, @Nullable DisplayMetrics metrics,
+                     @Nullable Configuration configuration) {
+        this(null);
+        mResourcesImpl = new ResourcesImpl(assetManager, metrics, configuration);
     }
 
-    public DisplayMetrics getDisplayMetrics() {
-        return mMetrics;
-    }
-
-    public void getValue(@NonNull ResourceId id, @NonNull TypedValue outValue, boolean resolveRefs) {
-        getValue(id.namespace(), id.type(), id.entry(), outValue, resolveRefs);
-    }
-
-    void getValue(@NonNull CharSequence namespace, @NonNull CharSequence typeName,
-                         @NonNull CharSequence entryName, @NonNull TypedValue outValue, boolean resolveRefs) {
+    /**
+     * @hide
+     * @hidden
+     */
+    @ApiStatus.Internal
+    public Resources(@Nullable ClassLoader classLoader) {
 
     }
 
-    @Nullable
-    CharSequence getPooledStringForCookie(int cookie, int id) {
-        if (cookie == 0 && id >= 0 && id < mGlobalObjects.length) {
-            return (CharSequence) mGlobalObjects[id];
-        }
-        return null;
-    }
-
-    @Nullable
-    String getNamespaceForCookie(int cookie, int id) {
-        if (cookie == 0 && id >= 0 && id < mNamespaces.length) {
-            return mNamespaces[id];
-        }
-        return null;
-    }
-
-    @Nullable
-    String getTypeStringForCookie(int cookie, int id) {
-        if (cookie == 0 && id >= 0 && id < mTypeStrings.length) {
-            return mTypeStrings[id];
-        }
-        return null;
-    }
-
-    @Nullable
-    String getKeyStringForCookie(int cookie, int id) {
-        if (cookie == 0 && id >= 0 && id < mKeyStrings.length) {
-            return mKeyStrings[id];
-        }
-        return null;
-    }
-
-    @Nullable
-    ResourceId getReferenceIdForCookie(int cookie, int typeId, int data) {
-        assert typeId > 0;
-        String namespace = getNamespaceForCookie(cookie, data >>> Res_value.NAMESPACE_INDEX_SHIFT);
-        String typeName = getTypeStringForCookie(cookie, typeId - 1);
-        String entryName = getKeyStringForCookie(cookie, data & Res_value.KEY_INDEX_MASK);
-        if (namespace != null && typeName != null && entryName != null) {
-            return new ResourceId(namespace, typeName, entryName);
-        }
-        return null;
-    }
-
-    @Nullable
-    ResourceId getAttributeIdForCookie(int cookie, int data) {
-        String namespace = getNamespaceForCookie(cookie, data >>> Res_value.NAMESPACE_INDEX_SHIFT);
-        String attribute = getKeyStringForCookie(cookie, data & Res_value.KEY_INDEX_MASK);
-        if (namespace != null && attribute != null) {
-            return ResourceId.attr(namespace, attribute);
-        }
-        return null;
+    private Resources() {
+        mResourcesImpl = new ResourcesImpl(
+                AssetManager.getSystem(),
+                null, null
+        );
     }
 
     @NonNull
+    public static Resources getSystem() {
+        synchronized (sLock) {
+            Resources ret = sSystem;
+            if (ret == null) {
+                ret = new Resources();
+                sSystem = ret;
+            }
+            return ret;
+        }
+    }
+
+    /**
+     * @hide
+     * @hidden
+     */
+    // can be called from any thread, but it's recommended to call from UI thread
+    @ApiStatus.Internal
+    public void setImpl(ResourcesImpl impl) {
+        // ModernUI changed: guarded with RW lock, avoid tainting the cache inside ResourcesImpl
+        // during Resources.load* operations
+        mLock.writeLock().lock();
+        try {
+            if (impl == mResourcesImpl) {
+                return;
+            }
+
+            // ensure all themes are updated to the new ResourcesImpl
+            mResourcesImpl = impl;
+            var iter = mThemeRefs.iterator();
+            while (iter.hasNext()) {
+                var theme = iter.next().get();
+                if (theme == null)
+                    iter.remove();
+                else
+                    theme.rebase(impl);
+            }
+        } finally {
+            mLock.writeLock().unlock();
+        }
+    }
+
+    /**
+     * @hide
+     * @hidden
+     */
+    @ApiStatus.Internal
+    public ResourcesImpl getImpl() {
+        return mResourcesImpl;
+    }
+
+    /**
+     * @hide
+     * @hidden
+     */
+    // should be called only from UI thread
+    @ApiStatus.Internal
+    public void updateConfiguration(Configuration config, DisplayMetrics metrics) {
+        mResourcesImpl.updateConfiguration(config, metrics);
+    }
+
+    /**
+     * Generate a new Theme object for this set of Resources.  It initially
+     * starts out empty.
+     * <p>
+     * This method can be called from any thread.
+     *
+     * @return the newly created Theme
+     */
+    @NonNull
+    public final Theme newTheme() {
+        mLock.writeLock().lock();
+        try {
+            // put constructor inside lock to avoid race between newTheme and setImpl
+            var theme = new Theme(this, mResourcesImpl);
+            // AOSP's nextPowerOf2() is wrongly implemented, just don't use that and always
+            // clean up the whole list
+            mThemeRefs.removeIf(r -> r.refersTo(null));
+            mThemeRefs.add(new WeakReference<>(theme));
+            return theme;
+        } finally {
+            mLock.writeLock().unlock();
+        }
+    }
+
+    /**
+     * Returns the current display metrics that are in effect for this resources
+     * object. The returned object should be treated as read-only.
+     */
+    @NonNull
+    @UnmodifiableView
+    public DisplayMetrics getDisplayMetrics() {
+        return mResourcesImpl.getDisplayMetrics();
+    }
+
+    /**
+     * Return the current configuration that is in effect for this resource
+     * object. The returned object should be treated as read-only.
+     */
+    @NonNull
+    @UnmodifiableView
+    public Configuration getConfiguration() {
+        return mResourcesImpl.getConfiguration();
+    }
+
+    @CheckReturnValue
+    @ApiStatus.Experimental
+    public boolean getValue(@NonNull ResourceId id, @NonNull TypedValue outValue,
+                            boolean resolveRefs) {
+        return mResourcesImpl.getValue(id, outValue, resolveRefs);
+    }
+
+    @Nullable
     public ColorStateList getColorStateList(@NonNull ResourceId id,
                                             @Nullable Theme theme) {
-        final TypedValue value = new TypedValue();
-        getValue(id, value, true);
-        return loadColorStateList(value, id, theme);
-    }
-
-    @NonNull
-    public ColorStateList loadColorStateList(@NonNull TypedValue value,
-                                             @Nullable Theme theme) {
-        return loadColorStateList(value, null, theme);
-    }
-
-    @SuppressWarnings("unchecked")
-    ColorStateList loadColorStateList(@NonNull TypedValue value,
-                                      @Nullable ResourceId id,
-                                      @Nullable Theme theme) {
-        // Handle inline color definitions.
-        if (value.type >= TypedValue.TYPE_FIRST_COLOR_INT
-                && value.type <= TypedValue.TYPE_LAST_COLOR_INT) {
-            return ColorStateList.valueOf(value.data);
-        }
-
-        if (value.type == TypedValue.TYPE_FACTORY) {
-            Object object = mGlobalObjects[value.data];
-            if (object instanceof BiFunction<?, ?, ?>) {
-                object = ((BiFunction<Resources, Theme, ?>) object).apply(this, theme);
-                if (object instanceof ColorStateList) {
-                    return (ColorStateList) object;
-                }
-            }
-            throw new NotFoundException("Resource is not a color: " + value);
-        }
-
-        String name = id != null ? id.toString() : "(missing name)";
-        throw new NotFoundException(
-                "Can't find ColorStateList from drawable " + name);
-    }
-
-    @SuppressWarnings("unchecked")
-    Drawable loadDrawable(@NonNull TypedValue value,
-                          @Nullable ResourceId id,
-                          @Nullable Theme theme) {
+        TypedValue tmp = (TypedValue) TMP_VALUE.getAndSetAcquire(this, null);
         try {
-            if (value.type == TypedValue.TYPE_FACTORY) {
-                Object object = mGlobalObjects[value.data];
-                if (object instanceof BiFunction<?, ?, ?>) {
-                    object = ((BiFunction<Resources, Theme, ?>) object).apply(this, theme);
-                    if (object == null) {
-                        return null;
-                    }
-                    if (object instanceof Drawable) {
-                        return (Drawable) object;
-                    }
-                }
-                throw new NotFoundException("Resource is not a drawable: " + value);
+            TypedValue val = tmp != null ? tmp : new TypedValue();
+            return getColorStateList(id, val, theme);
+        } finally {
+            if (tmp != null) {
+                TMP_VALUE.setRelease(this, tmp);
             }
-
-            if (value.type >= TypedValue.TYPE_FIRST_COLOR_INT
-                    && value.type <= TypedValue.TYPE_LAST_COLOR_INT) {
-                return new ColorDrawable(value.data);
-            }
-
-            //TODO
-            return null;
-        } catch (Exception e) {
-            String name = id != null ? id.toString() : "(missing name)";
-
-            // The target drawable might fail to load for any number of
-            // reasons, but we always want to include the resource name.
-            // Since the client already expects this method to throw a
-            // NotFoundException, just throw one of those.
-            final NotFoundException nfe = new NotFoundException("Drawable " + name, e);
-            nfe.setStackTrace(new StackTraceElement[0]);
-            throw nfe;
         }
     }
 
-    ResolvedBag getBag(@NonNull ResourceId resId) {
-        return getBag(resId.entry());
+    @Nullable
+    public ColorStateList getColorStateList(@NonNull ResourceId id,
+                                            @NonNull TypedValue value,
+                                            @Nullable Theme theme) {
+        mLock.readLock().lock();
+        try {
+            ResourcesImpl impl = mResourcesImpl;
+            if (impl.getValue(id, value, true)) {
+                return impl.loadColorStateList(this, value, id, theme);
+            }
+            return null;
+        } finally {
+            mLock.readLock().unlock();
+        }
     }
 
-    @SuppressWarnings("ConstantValue")
-    ResolvedBag getBag(@NonNull String style) {
-        var cached = mCachedBags.get(style);
-        if (cached != null) {
-            return cached;
+    @Nullable
+    public ColorStateList loadColorStateList(@NonNull TypedValue value,
+                                             @Nullable ResourceId id,
+                                             @Nullable Theme theme) {
+        // ensure this.mResourcesImpl is not altered during the call
+        mLock.readLock().lock();
+        try {
+            return mResourcesImpl.loadColorStateList(this, value, id, theme);
+        } finally {
+            mLock.readLock().unlock();
         }
-
-        int entryIndex = Arrays.binarySearch(mStyleKeys, style);
-        if (entryIndex < 0) {
-            return null;
-        }
-
-        int offset = mStyleOffsets[entryIndex];
-        int[] data = mData;
-
-        int parentId = data[offset + MAP_ENTRY_PARENT];
-        int entryCount = data[offset + MAP_ENTRY_COUNT];
-        offset += MAP_ENTRY_HEADER_COLUMNS;
-        if (parentId == -1) {
-            // no parent
-            ResolvedBag bag = new ResolvedBag();
-            assert MAP_COLUMNS == ResolvedBag.VALUE_COLUMNS;
-            if (entryCount > 0) {
-                // TODO assert entries already sorted
-                String[] keys = new String[entryCount * 2];
-                int[] values = new int[entryCount * 3];
-                for (int i = 0; i < entryCount; i++) {
-                    keys[i * 2 + 0] = DEFAULT_NAMESPACE;
-                    keys[i * 2 + 1] = mKeyStrings[data[offset + MAP_NAME]];
-                    values[i * ResolvedBag.VALUE_COLUMNS + ResolvedBag.COLUMN_TYPE] = data[offset + MAP_DATA_TYPE];
-                    values[i * ResolvedBag.VALUE_COLUMNS + ResolvedBag.COLUMN_DATA] = data[offset + MAP_DATA];
-                    offset += MAP_COLUMNS;
-                }
-                bag.keys = keys;
-                bag.values = values;
-            }
-            mCachedBags.put(style, bag);
-            return bag;
-        }
-
-        var parentBag = getBag(mKeyStrings[parentId]);
-        if (parentBag == null) {
-            Log.LOGGER.error(MARKER, "Failed to find parent '{}' of bag '{}'",
-                    mKeyStrings[parentId], style);
-            return null;
-        }
-
-        ResolvedBag newBag = new ResolvedBag();
-        int parentCount = parentBag.getEntryCount();
-        int maxCount = parentCount + entryCount;
-        if (maxCount > 0) {
-            // allocate max possible array
-            String[] newKeys = new String[maxCount * 2];
-            int[] newValues = new int[maxCount * ResolvedBag.VALUE_COLUMNS];
-            int newIndex = 0;
-            String[] parentKeys = parentBag.keys;
-            int[] parentValues = parentBag.values;
-            int childIndex = 0;
-            int childOffset = offset;
-            int parentIndex = 0;
-
-            // merge two sorted arrays (parent and child)
-
-            while (childIndex < entryCount && parentIndex < parentCount) {
-                String childKey = mKeyStrings[data[childOffset + MAP_NAME]];
-                String parentKey = parentKeys[parentIndex * 2 + 1];
-
-                int keyCompare = childKey.compareTo(parentKey);
-
-                if (keyCompare <= 0) {
-                    // Use the child key if it comes before the parent
-                    // or is equal to the parent (overrides).
-                    newKeys[newIndex * 2 + 0] = DEFAULT_NAMESPACE;
-                    newKeys[newIndex * 2 + 1] = childKey;
-                    newValues[newIndex * ResolvedBag.VALUE_COLUMNS + ResolvedBag.COLUMN_TYPE] =
-                            data[childOffset + MAP_DATA_TYPE];
-                    newValues[newIndex * ResolvedBag.VALUE_COLUMNS + ResolvedBag.COLUMN_DATA] =
-                            data[childOffset + MAP_DATA];
-                    childIndex++;
-                    childOffset += MAP_COLUMNS;
-                } else {
-                    newKeys[newIndex * 2 + 0] = DEFAULT_NAMESPACE;
-                    newKeys[newIndex * 2 + 1] = parentKey;
-                    System.arraycopy(parentValues, parentIndex * ResolvedBag.VALUE_COLUMNS,
-                            newValues, newIndex * ResolvedBag.VALUE_COLUMNS, ResolvedBag.VALUE_COLUMNS);
-                }
-
-                // assert already sorted
-                assert newIndex == 0 ||
-                        newKeys[newIndex * 2 + 1].compareTo(newKeys[(newIndex - 1) * 2 + 1]) >= 0;
-
-                if (keyCompare >= 0) {
-                    parentIndex++;
-                }
-                newIndex++;
-            }
-
-            while (childIndex < entryCount) {
-                String childKey = mKeyStrings[data[childOffset + MAP_NAME]];
-                newKeys[newIndex * 2 + 0] = DEFAULT_NAMESPACE;
-                newKeys[newIndex * 2 + 1] = childKey;
-                newValues[newIndex * ResolvedBag.VALUE_COLUMNS + ResolvedBag.COLUMN_TYPE] =
-                        data[childOffset + MAP_DATA_TYPE];
-                newValues[newIndex * ResolvedBag.VALUE_COLUMNS + ResolvedBag.COLUMN_DATA] =
-                        data[childOffset + MAP_DATA];
-                childIndex++;
-                childOffset += MAP_COLUMNS;
-                newIndex++;
-            }
-
-            if (parentIndex < parentCount) {
-                int numToCopy = parentCount - parentIndex;
-                System.arraycopy(parentValues, parentIndex * ResolvedBag.VALUE_COLUMNS,
-                        newValues, newIndex * ResolvedBag.VALUE_COLUMNS, numToCopy * ResolvedBag.VALUE_COLUMNS);
-                for (int i = 0; i < numToCopy; i++) {
-                    String parentKey = parentKeys[parentIndex * 2 + 1];
-                    newKeys[newIndex * 2 + 0] = DEFAULT_NAMESPACE;
-                    newKeys[newIndex * 2 + 1] = parentKey;
-                    parentIndex++;
-                    newIndex++;
-                }
-            }
-
-            assert newIndex <= maxCount;
-            if (newIndex < maxCount) {
-                // trim to size
-                newKeys = Arrays.copyOf(newKeys, newIndex * 2);
-                newValues = Arrays.copyOf(newValues, newIndex * ResolvedBag.VALUE_COLUMNS);
-            }
-
-            newBag.keys = newKeys;
-            newBag.values = newValues;
-        }
-        mCachedBags.put(style, newBag);
-        return newBag;
     }
+
+    @Nullable
+    public Drawable getDrawable(@NonNull ResourceId id,
+                                @Nullable Theme theme) {
+        TypedValue tmp = (TypedValue) TMP_VALUE.getAndSetAcquire(this, null);
+        try {
+            TypedValue val = tmp != null ? tmp : new TypedValue();
+            return getDrawable(id, val, theme);
+        } finally {
+            if (tmp != null) {
+                TMP_VALUE.setRelease(this, tmp);
+            }
+        }
+    }
+
+    @Nullable
+    public Drawable getDrawable(@NonNull ResourceId id,
+                                @NonNull TypedValue value,
+                                @Nullable Theme theme) {
+        mLock.readLock().lock();
+        try {
+            ResourcesImpl impl = mResourcesImpl;
+            if (impl.getValue(id, value, true)) {
+                return impl.loadDrawable(this, value, id, theme);
+            }
+            return null;
+        } finally {
+            mLock.readLock().unlock();
+        }
+    }
+
+    @Nullable
+    public Drawable loadDrawable(@NonNull TypedValue value,
+                                 @Nullable ResourceId id,
+                                 @Nullable Theme theme) {
+        // ensure this.mResourcesImpl is not altered during the call
+        mLock.readLock().lock();
+        try {
+            return mResourcesImpl.loadDrawable(this, value, id, theme);
+        } finally {
+            mLock.readLock().unlock();
+        }
+    }
+
+    @Nullable
+    public Image getImage(@NonNull ResourceId id,
+                          boolean needNewInstance) {
+        TypedValue tmp = (TypedValue) TMP_VALUE.getAndSetAcquire(this, null);
+        try {
+            TypedValue val = tmp != null ? tmp : new TypedValue();
+            return getImage(id, val, needNewInstance);
+        } finally {
+            if (tmp != null) {
+                TMP_VALUE.setRelease(this, tmp);
+            }
+        }
+    }
+
+    @Nullable
+    public Image getImage(@NonNull ResourceId id,
+                          @NonNull TypedValue value,
+                          boolean needNewInstance) {
+        ResourcesImpl impl = mResourcesImpl;
+        if (impl.getValue(id, value, true)) {
+            return impl.loadImage(value, id, needNewInstance);
+        }
+        return null;
+    }
+
+    @Nullable
+    public Image loadImage(@NonNull TypedValue value,
+                           @Nullable ResourceId id,
+                           boolean needNewInstance) {
+        return mResourcesImpl.loadImage(value, id, needNewInstance);
+    }
+
+    @Nullable
+    public Asset getRawResource(@NonNull ResourceId id) {
+        TypedValue tmp = (TypedValue) TMP_VALUE.getAndSetAcquire(this, null);
+        try {
+            TypedValue val = tmp != null ? tmp : new TypedValue();
+            return getRawResource(id, val);
+        } finally {
+            if (tmp != null) {
+                TMP_VALUE.setRelease(this, tmp);
+            }
+        }
+    }
+
+    @Nullable
+    public Asset getRawResource(@NonNull ResourceId id, @NonNull TypedValue value) {
+        ResourcesImpl impl = mResourcesImpl;
+        if (impl.getValue(id, value, true)) {
+            return impl.loadRawResource(value, id);
+        }
+        return null;
+    }
+
+    @Nullable
+    public Asset loadRawResource(@NonNull TypedValue value, @Nullable ResourceId id) {
+        return mResourcesImpl.loadRawResource(value, id);
+    }
+
+    /**
+     * Performs a sequential search across selected asset packs for a specific path.
+     * Returns the asset reference on the first match, or {@code null} otherwise.
+     * Enables access to the "assets" directory.
+     * <p>
+     * A valid path must:
+     * <ul>
+     * <li>use only forward slashes as separators, not backslashes</li>
+     * <li>contain only lowercase letters a to z, digits 0 to 9, dash (-), dot (.), underscore (_) in each segment</li>
+     * <li>not start with or end with a slash</li>
+     * <li>not use single dot (.) or dotdot (..) as a path segment</li>
+     * <li>not contain consecutive slashes (//)</li>
+     * </ul>
+     *
+     * @param path the path of the asset to search
+     * @return a reference to the asset, or null if not found
+     */
+    @Nullable
+    public Asset getAsset(@NonNull String path) {
+        return mResourcesImpl.mAssetManager.getNonAsset("assets/" + path);
+    }
+
+
+
+
 
     @ThreadSafe
-    public final class Theme {
+    public static final class Theme {
 
-        private final Object mLock = new Object();
+        private final ReentrantReadWriteLock mLock = new ReentrantReadWriteLock();
 
+        private final Resources mResources;
+        @GuardedBy("mLock")
+        private ResourcesImpl mResourcesImpl;
+
+        @GuardedBy("mLock")
         private final Resources.ThemeKey mKey = new Resources.ThemeKey();
         // a snapshot of key
+        @GuardedBy("mLock")
         private Resources.ThemeKey mKeyCopy = mKey.clone();
 
         // open addressing, namespace -> attribute -> entry
-        Object2ObjectOpenHashMap<String, Object2ObjectOpenHashMap<String, Entry>> mEntries;
+        @GuardedBy("mLock")
+        private Object2ObjectOpenHashMap<String, Object2ObjectOpenHashMap<String, Entry>> mEntries;
+
+        Theme(@NonNull Resources resources, ResourcesImpl resourcesImpl) {
+            mResourcesImpl = resourcesImpl;
+            mResources = resources;
+        }
+
+        void rebase(ResourcesImpl resourcesImpl) {
+            mLock.writeLock().lock();
+            try {
+                mResourcesImpl = resourcesImpl;
+                //TODO invalidate mEntries
+            } finally {
+                mLock.writeLock().unlock();
+            }
+        }
 
         /**
          * Place new attribute values into the theme.  The style resource
@@ -453,22 +491,25 @@ public class Resources {
          * @param force If true, values in the style resource will always be
          *              used in the theme; otherwise, they will only be used
          *              if not already defined in the theme.
-         * @throws IllegalArgumentException if the resId is not a style or not found
+         * @return true if success, false if the resId is not a style or not found
          */
-        public void applyStyle(@NonNull @StyleRes ResourceId resId, boolean force) {
-            synchronized (mLock) {
+        public boolean applyStyle(@NonNull @StyleRes ResourceId resId, boolean force) {
+            mLock.writeLock().lock();
+            try {
                 boolean result = applyStyleInternal(resId, force);
-                if (!result) {
-                    throw new IllegalArgumentException("Failed to apply style " +
-                            resId + " to theme");
+                if (result) {
+                    mKey.append(resId, force);
+                    mKeyCopy = mKey.clone();
                 }
-                mKey.append(resId, force);
-                mKeyCopy = mKey.clone();
+                return result;
+            } finally {
+                mLock.writeLock().unlock();
             }
         }
 
+        @GuardedBy("mLock")
         private boolean applyStyleInternal(@NonNull ResourceId resId, boolean force) {
-            var bag = getBag(resId);
+            ResolvedBag bag = mResourcesImpl.mAssetManager.getBag(resId);
             if (bag == null) {
                 return false;
             }
@@ -620,11 +661,18 @@ public class Resources {
             final int len = attrs.length >> 1;
             final TypedArray array = TypedArray.obtain(getResources(), len);
 
-            synchronized (mLock) {
+            mLock.readLock().lock();
+            try {
                 applyStyle(set, defStyleAttr, defStyleRes,
                         attrs, array.mData, array.mIndices,
                         array.mValue,
                         array.mDefStyleAttrFinder);
+                // We know that Resources.getImpl() may change during configuration changes.
+                // We capture the ResourceImpl inside the lock.
+                array.mMetrics = mResourcesImpl.getDisplayMetrics();
+                array.mAssetManager = mResourcesImpl.mAssetManager;
+            } finally {
+                mLock.readLock().unlock();
             }
             array.mDefStyleAttrFinder.clear();
             array.mTheme = this;
@@ -669,7 +717,8 @@ public class Resources {
          */
         public boolean resolveAttribute(@NonNull String namespace, @NonNull String attribute,
                                         @NonNull TypedValue outValue, boolean resolveRefs) {
-            synchronized (mLock) {
+            mLock.readLock().lock();
+            try {
                 if (!getAttribute(namespace, attribute, outValue)) {
                     return false;
                 }
@@ -681,38 +730,13 @@ public class Resources {
                     //TODO
                 }
 
-                // post-process
-                switch (outValue.type & Res_value.TYPE_MASK) {
-                    case TypedValue.TYPE_STRING -> {
-                        if ((outValue.object = getPooledStringForCookie(outValue.cookie, outValue.data)) == null) {
-                            return false;
-                        }
-                    }
-                    case TypedValue.TYPE_REFERENCE -> {
-                        int typeId = outValue.type >>> Res_value.TYPE_ID_SHIFT;
-                        if (typeId != 0) {
-                            // erase higher 8 bits
-                            outValue.type = TypedValue.TYPE_REFERENCE;
-                            if ((outValue.object = getReferenceIdForCookie(cookie, typeId, outValue.data)) == null) {
-                                return false;
-                            }
-                        } else {
-                            outValue.object = null;
-                        }
-                    }
-                    case TypedValue.TYPE_ATTRIBUTE -> {
-                        if ((outValue.object = getAttributeIdForCookie(outValue.cookie, outValue.data)) == null) {
-                            return false;
-                        }
-                    }
-                    default -> outValue.object = null;
-                }
-
-                return true;
+                return mResourcesImpl.mAssetManager.postProcess(outValue);
+            } finally {
+                mLock.readLock().unlock();
             }
         }
 
-        static class Entry implements Cloneable {
+        static final class Entry implements Cloneable {
             int type;
             int data;
             int cookie;
@@ -740,13 +764,15 @@ public class Resources {
             return type == Res_value.TYPE_NULL && data != Res_value.DATA_NULL_EMPTY;
         }
 
-        boolean getAttribute(@NonNull String namespace, @NonNull String attribute,
+        @GuardedBy("mLock")
+        private boolean getAttribute(
+                             @NonNull String namespace, @NonNull String attribute,
                              @NonNull TypedValue outValue) {
             if (mEntries == null) {
                 return false;
             }
             int typeSpecFlags = 0;
-            for (int __ = 0; __ < kMaxIterations; __++) {
+            for (int __ = 0; __ < AssetManager.kMaxIterations; __++) {
                 Object2ObjectOpenHashMap<String, Entry> group;
                 Entry e;
                 if ((group = mEntries.get(namespace)) == null || (e = group.get(attribute)) == null) {
@@ -757,9 +783,15 @@ public class Resources {
                 }
                 typeSpecFlags |= e.typeSpecFlags;
                 if (e.type == Res_value.TYPE_ATTRIBUTE) {
-                    namespace = mNamespaces[e.data >>> Res_value.NAMESPACE_INDEX_SHIFT];
-                    attribute = mKeyStrings[e.data & Res_value.KEY_INDEX_MASK];
-                    continue;
+                    LoadedResources loadedResources = mResourcesImpl.mAssetManager.getLoadedResources(e.cookie);
+                    if (loadedResources != null) {
+                        namespace = loadedResources.lookupPackageName(e.data >>> Res_value.PACKAGE_ID_SHIFT);
+                        attribute = loadedResources.getKeyStringPool().getStringAt(e.data & Res_value.KEY_INDEX_MASK);
+                        if (namespace != null && attribute != null) {
+                            continue;
+                        }
+                    }
+                    return false;
                 }
 
                 outValue.cookie = e.cookie;
@@ -771,15 +803,23 @@ public class Resources {
             return false;
         }
 
-        boolean resolveAttributeReference(@NonNull TypedValue value) {
+        private boolean resolveAttributeReference(@NonNull TypedValue value) {
             if (value.type != Res_value.TYPE_ATTRIBUTE) {
                 //TODO currently we have only style resources, where styles do not need resolve
                 return true;
             }
 
+            LoadedResources loadedResources = mResourcesImpl.mAssetManager.getLoadedResources(value.cookie);
+            if (loadedResources == null) {
+                return false;
+            }
+            String namespace = loadedResources.lookupPackageName(value.data >>> Res_value.PACKAGE_ID_SHIFT);
+            String attribute = loadedResources.getKeyStringPool().getStringAt(value.data & Res_value.KEY_INDEX_MASK);
+            if (namespace == null || attribute == null) {
+                return false;
+            }
+
             int flags = value.flags;
-            String namespace = mNamespaces[value.data >>> Res_value.NAMESPACE_INDEX_SHIFT];
-            String attribute = mKeyStrings[value.data & Res_value.KEY_INDEX_MASK];
             if (!getAttribute(namespace, attribute, value)) {
                 return false;
             }
@@ -788,7 +828,9 @@ public class Resources {
             return true;
         }
 
-        void applyStyle(@Nullable AttributeSet set,
+        @GuardedBy("mLock")
+        private void applyStyle(
+                        @Nullable AttributeSet set,
                         @Nullable @AttrRes ResourceId defStyleAttr,
                         @Nullable @StyleRes ResourceId defStyleRes,
                         @NonNull String[] attrs,
@@ -796,14 +838,21 @@ public class Resources {
                         @NonNull TypedValue value,
                         @NonNull BagAttributeFinder defStyleAttrFinder) {
 
-            AssetManager.ResolvedBag defStyleBag = null;
+            ResolvedBag defStyleBag = null;
             if (defStyleAttr != null) {
                 if (getAttribute(defStyleAttr.namespace(), defStyleAttr.entry(), value)) {
-                    defStyleBag = getBag(mKeyStrings[value.data]);
+                    LoadedResources loadedResources = mResourcesImpl.mAssetManager.getLoadedResources(value.cookie);
+                    if (loadedResources != null) {
+                        ResourceId styleId = loadedResources.lookupResourceId(null,
+                                value.data, (value.type & Res_value.DATA_TYPE_ID_MASK) >>> Res_value.DATA_TYPE_ID_SHIFT);
+                        if (styleId != null) {
+                            defStyleBag = mResourcesImpl.mAssetManager.getBag(styleId);
+                        }
+                    }
                 }
             }
             if (defStyleBag == null && defStyleRes != null) {
-                defStyleBag = getBag(defStyleRes);
+                defStyleBag = mResourcesImpl.mAssetManager.getBag(defStyleRes);
             }
             defStyleAttrFinder.reset(defStyleBag);
 
@@ -850,51 +899,97 @@ public class Resources {
          * @return Resources to which this theme belongs.
          */
         public Resources getResources() {
-            return Resources.this;
+            return mResources;
         }
 
         public void setTo(@NonNull Theme other) {
+            Objects.requireNonNull(other);
             if (this == other) {
                 return;
             }
-            synchronized (mLock) {
-                synchronized (other.mLock) {
-                    //TODO we also need to lock underlying Resources & AssetManager
-                    // and retrieve attribute values if they are different.
-                    // atm we just do deep copy.
-                    if (other.mEntries == null) {
-                        mEntries = null;
-                    } else {
-                        if (mEntries == null) {
-                            mEntries = new Object2ObjectOpenHashMap<>();
-                        }
-                        for (var oit = other.mEntries.object2ObjectEntrySet().fastIterator(); oit.hasNext(); ) {
-                            var oe = oit.next();
-                            Object2ObjectOpenHashMap<String, Entry> inner =
-                                    new Object2ObjectOpenHashMap<>(oe.getValue().size());
-                            for (var iit = oe.getValue().object2ObjectEntrySet().fastIterator(); iit.hasNext(); ) {
-                                var ie = iit.next();
-                                inner.put(ie.getKey(), ie.getValue().clone());
-                            }
-                            mEntries.put(oe.getKey(), inner);
-                        }
-                    }
 
-                    mKey.setTo(other.getKey());
-                    mKeyCopy = mKey.clone();
+            int thisHash = System.identityHashCode(this);
+            int otherHash = System.identityHashCode(other);
+
+            if (thisHash < otherHash) {
+                mLock.writeLock().lock();
+                try {
+                    other.mLock.readLock().lock();
+                    try {
+                        setToInternal(other);
+                    } finally {
+                        other.mLock.readLock().unlock();
+                    }
+                } finally {
+                    mLock.writeLock().unlock();
+                }
+            } else if (thisHash > otherHash) {
+                other.mLock.readLock().lock();
+                try {
+                    mLock.writeLock().lock();
+                    try {
+                        setToInternal(other);
+                    } finally {
+                        mLock.writeLock().unlock();
+                    }
+                } finally {
+                    other.mLock.readLock().unlock();
+                }
+            } else {
+                synchronized (Theme.class) {
+                    mLock.writeLock().lock();
+                    try {
+                        other.mLock.readLock().lock();
+                        try {
+                            setToInternal(other);
+                        } finally {
+                            other.mLock.readLock().unlock();
+                        }
+                    } finally {
+                        mLock.writeLock().unlock();
+                    }
                 }
             }
         }
 
+        private void setToInternal(@NonNull Theme other) {
+            //TODO we also need to lock underlying AssetManager and retrieve attribute values
+            // if they are different. atm we assume both assetmanager are same, just do deep copy.
+            if (other.mEntries == null) {
+                mEntries = null;
+            } else {
+                if (mEntries == null) {
+                    mEntries = new Object2ObjectOpenHashMap<>();
+                }
+                for (var oit = other.mEntries.object2ObjectEntrySet().fastIterator(); oit.hasNext(); ) {
+                    var oe = oit.next();
+                    Object2ObjectOpenHashMap<String, Entry> inner =
+                            new Object2ObjectOpenHashMap<>(oe.getValue().size());
+                    for (var iit = oe.getValue().object2ObjectEntrySet().fastIterator(); iit.hasNext(); ) {
+                        var ie = iit.next();
+                        inner.put(ie.getKey(), ie.getValue().clone());
+                    }
+                    mEntries.put(oe.getKey(), inner);
+                }
+            }
+
+            mKey.setTo(other.getKey());
+            mKeyCopy = mKey.clone();
+        }
+
         public void clear() {
-            synchronized (mLock) {
+            mLock.writeLock().lock();
+            try {
                 mEntries = null;
                 mKey.clear();
                 mKeyCopy = mKey.clone();
+            } finally {
+                mLock.writeLock().unlock();
             }
         }
 
         /**
+         * @hide
          * @hidden
          */
         @NonNull
@@ -939,9 +1034,8 @@ public class Resources {
         }
 
         ThemeKey getKey() {
-            synchronized (mLock) {
-                return mKeyCopy;
-            }
+            // in our use case, read lock is not needed here
+            return mKeyCopy;
         }
     }
 

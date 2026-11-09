@@ -1,19 +1,19 @@
 /*
- * Modern UI.
- * Copyright (C) 2022-2025 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2022-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package icyllis.modernui.graphics.drawable;
@@ -21,6 +21,7 @@ package icyllis.modernui.graphics.drawable;
 import icyllis.modernui.annotation.NonNull;
 import icyllis.modernui.annotation.Nullable;
 import icyllis.modernui.graphics.*;
+import icyllis.modernui.resources.ResourceId;
 import icyllis.modernui.resources.Resources;
 import icyllis.modernui.util.ColorStateList;
 import icyllis.modernui.util.DisplayMetrics;
@@ -74,7 +75,10 @@ public class ImageDrawable extends Drawable {
      * Create a drawable by opening a given file path and decoding the image.
      * <p>
      * This method may only be called from UI thread.
+     *
+     * @deprecated use the new Resources API, {@link Resources#getDrawable(ResourceId, Resources.Theme)}
      */
+    @Deprecated
     public ImageDrawable(@NonNull String namespace, @NonNull String path) {
         Image image = Image.create(namespace, path);
         init(new ImageState(image), null);
@@ -97,7 +101,9 @@ public class ImageDrawable extends Drawable {
      * the given stream after read operation has completed. The stream will be at end if
      * read operation succeeds.
      * <p>
-     * This method may only be called from UI thread.
+     * As of version 3.13.0, this method is thread-safe and can be invoked from any
+     * thread except the internal rendering thread. Prior to version 3.13.0,
+     * this method may only be called from the UI thread.
      */
     public ImageDrawable(Resources res, @NonNull InputStream stream) {
         Image image = null;
@@ -121,6 +127,12 @@ public class ImageDrawable extends Drawable {
 
     /**
      * Returns the image used by this drawable to render. May be null.
+     * <p>
+     * If this Drawable object was not created by you (for example, from Resources),
+     * then you must <em>not</em> close the returned Image.
+     * <p>
+     * This method and the returned object should be used only on the UI thread.
+     * Otherwise, clone it first, and close the new object after use.
      */
     @Nullable
     public final Image getImage() {
@@ -134,11 +146,11 @@ public class ImageDrawable extends Drawable {
     public void setImage(@Nullable Image image) {
         if (mImageState.mImage != image) {
             mImageState.mImage = image;
-            // Added by Modern UI
+            // Added by ModernUI
             if (image != null) {
                 image.getBounds(mImageState.mSrcRect);
             }
-            // Added by Modern UI
+            // Added by ModernUI
             mDstRectAndInsetsDirty = true;
             invalidateSelf();
         }
@@ -157,7 +169,7 @@ public class ImageDrawable extends Drawable {
         }
         if (mTargetDensity != density) {
             mTargetDensity = density;
-            // Added by Modern UI
+            // Added by ModernUI
             mDstRectAndInsetsDirty = true;
             invalidateSelf();
         }
@@ -456,11 +468,11 @@ public class ImageDrawable extends Drawable {
             useShader = paint.hasShader();
         }
 
-        final int restoreAlpha;
+        final float restoreAlpha;
         if (state.mBaseAlpha != 1.0f) {
             final Paint p = getPaint();
-            restoreAlpha = p.getAlpha();
-            p.setAlpha((int) (restoreAlpha * state.mBaseAlpha + 0.5f));
+            restoreAlpha = p.getAlphaF();
+            p.setAlpha(restoreAlpha * state.mBaseAlpha);
         } else {
             restoreAlpha = -1;
         }
@@ -498,7 +510,7 @@ public class ImageDrawable extends Drawable {
                                 (tileModeY == null ? Shader.TileMode.CLAMP : tileModeY).nativeInt,
                                 paint.getFilterMode() != ImageShader.FILTER_MODE_NEAREST
                                         ? icyllis.arc3d.core.SamplingOptions.LINEAR
-                                        : icyllis.arc3d.core.SamplingOptions.POINT,
+                                        : icyllis.arc3d.core.SamplingOptions.NEAREST,
                                 updateShaderMatrix(image, needMirroring)
                         )
                 );
@@ -524,7 +536,7 @@ public class ImageDrawable extends Drawable {
             Matrix matrix = new Matrix();
 
             if (needMirroring) {
-                // fixed by Modern UI
+                // fixed by ModernUI
                 matrix.setScaleTranslate(-1.0f, 1.0f, mDstRect.width(), 0);
             }
 
@@ -561,12 +573,12 @@ public class ImageDrawable extends Drawable {
         // since only they are guaranteed to fill their bounds
         boolean opaqueOverShape = mImageState.mImage != null
                 && mImageState.mImage.isOpaque();
-        outline.setAlpha(opaqueOverShape ? getAlpha() / 255.0f : 0.0f);
+        outline.setAlpha(opaqueOverShape ? getAlpha() : 0.0f);
     }
 
     @Override
-    public void setAlpha(int alpha) {
-        final int oldAlpha = mImageState.mPaint.getAlpha();
+    public void setAlpha(float alpha) {
+        final float oldAlpha = mImageState.mPaint.getAlphaF();
         if (alpha != oldAlpha) {
             mImageState.mPaint.setAlpha(alpha);
             invalidateSelf();
@@ -574,8 +586,8 @@ public class ImageDrawable extends Drawable {
     }
 
     @Override
-    public int getAlpha() {
-        return mImageState.mPaint.getAlpha();
+    public float getAlpha() {
+        return mImageState.mPaint.getAlphaF();
     }
 
     @Override

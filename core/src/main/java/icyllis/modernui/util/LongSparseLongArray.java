@@ -1,19 +1,19 @@
 /*
- * Modern UI.
+ * ModernUI.
  * Copyright (C) 2025 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  *
  * This file incorporates work covered by the following copyright and
  * permission notice:
@@ -118,7 +118,7 @@ public class LongSparseLongArray implements Cloneable {
      * if no such mapping has been made.
      */
     public long get(long key, long valueIfKeyNotFound) {
-        int i = Arrays.binarySearch(mKeys, 0, mSize, key);
+        int i = ContainerHelpers.binarySearch(mKeys, 0, mSize, key);
 
         if (i < 0) {
             return valueIfKeyNotFound;
@@ -131,7 +131,7 @@ public class LongSparseLongArray implements Cloneable {
      * Removes the mapping from the specified key, if there was any.
      */
     public void delete(long key) {
-        int i = Arrays.binarySearch(mKeys, 0, mSize, key);
+        int i = ContainerHelpers.binarySearch(mKeys, 0, mSize, key);
 
         if (i >= 0) {
             removeAt(i);
@@ -153,7 +153,7 @@ public class LongSparseLongArray implements Cloneable {
      * was one.
      */
     public void put(long key, long value) {
-        int i = Arrays.binarySearch(mKeys, 0, mSize, key);
+        int i = ContainerHelpers.binarySearch(mKeys, 0, mSize, key);
 
         if (i >= 0) {
             mValues[i] = value;
@@ -219,7 +219,7 @@ public class LongSparseLongArray implements Cloneable {
      * key is not mapped.
      */
     public int indexOfKey(long key) {
-        return Arrays.binarySearch(mKeys, 0, mSize, key);
+        return ContainerHelpers.binarySearch(mKeys, 0, mSize, key);
     }
 
     /**

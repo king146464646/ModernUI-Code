@@ -1,31 +1,28 @@
 /*
- * Modern UI.
- * Copyright (C) 2019-2023 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2019-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package icyllis.modernui.widget;
 
+import icyllis.modernui.annotation.NonNull;
 import icyllis.modernui.core.Context;
 import icyllis.modernui.graphics.Rect;
 import icyllis.modernui.view.*;
 import org.intellij.lang.annotations.MagicConstant;
-import org.jetbrains.annotations.ApiStatus;
-
-import java.lang.annotation.Retention;
-import java.lang.annotation.RetentionPolicy;
 
 /**
  * A view that shows items in two-dimensional scrolling grid. The items in the
@@ -33,19 +30,11 @@ import java.lang.annotation.RetentionPolicy;
  */
 // Modified from Android
 public class GridView extends AbsListView {
-    @ApiStatus.Internal
-    @MagicConstant(intValues = {
-            NO_STRETCH,
-            STRETCH_SPACING,
-            STRETCH_COLUMN_WIDTH,
-            STRETCH_SPACING_UNIFORM
-    })
-    @Retention(RetentionPolicy.SOURCE)
-    public @interface StretchMode {
-    }
+    //TODO add header footer support
 
     /**
      * Disables stretching.
+     * GridView will use the specified column width and horizontal spacing.
      *
      * @see #setStretchMode(int)
      */
@@ -62,12 +51,13 @@ public class GridView extends AbsListView {
      * @see #setStretchMode(int)
      */
     public static final int STRETCH_COLUMN_WIDTH = 2;
-    /**
+    // ModernUI changed: this is removed due to several bugs
+    /*
      * Stretches the spacing between columns. The spacing is uniform.
      *
      * @see #setStretchMode(int)
      */
-    public static final int STRETCH_SPACING_UNIFORM = 3;
+    //public static final int STRETCH_SPACING_UNIFORM = 3;
 
     /**
      * Creates as many columns as can fit on screen.
@@ -76,7 +66,9 @@ public class GridView extends AbsListView {
      */
     public static final int AUTO_FIT = -1;
 
-    private int mNumColumns = AUTO_FIT;
+    static final int DEFAULT_COLUMNS = 2;
+
+    private int mNumColumns;
 
     private int mHorizontalSpacing = 0;
     private int mRequestedHorizontalSpacing;
@@ -84,7 +76,7 @@ public class GridView extends AbsListView {
     private int mStretchMode = STRETCH_COLUMN_WIDTH;
     private int mColumnWidth;
     private int mRequestedColumnWidth;
-    private int mRequestedNumColumns;
+    private int mRequestedNumColumns = AUTO_FIT;
 
     private View mReferenceView = null;
     private View mReferenceViewInSelectedRow = null;
@@ -249,11 +241,9 @@ public class GridView extends AbsListView {
         int nextLeft;
 
         if (isLayoutRtl) {
-            nextLeft = getWidth() - mListPadding.right - columnWidth -
-                    ((mStretchMode == STRETCH_SPACING_UNIFORM) ? horizontalSpacing : 0);
+            nextLeft = getWidth() - mListPadding.right - columnWidth;
         } else {
-            nextLeft = mListPadding.left +
-                    ((mStretchMode == STRETCH_SPACING_UNIFORM) ? horizontalSpacing : 0);
+            nextLeft = mListPadding.left;
         }
 
         if (!mStackFromBottom) {
@@ -879,7 +869,6 @@ public class GridView extends AbsListView {
 
     private boolean determineColumns(int availableSpace) {
         final int requestedHorizontalSpacing = mRequestedHorizontalSpacing;
-        final int stretchMode = mStretchMode;
         final int requestedColumnWidth = mRequestedColumnWidth;
         boolean didNotInitiallyFit = false;
 
@@ -890,7 +879,7 @@ public class GridView extends AbsListView {
                         (requestedColumnWidth + requestedHorizontalSpacing);
             } else {
                 // Just make up a number if we don't have enough info
-                mNumColumns = 2;
+                mNumColumns = DEFAULT_COLUMNS;
             }
         } else {
             // We picked the columns
@@ -901,53 +890,42 @@ public class GridView extends AbsListView {
             mNumColumns = 1;
         }
 
-        switch (stretchMode) {
+        int spaceLeftOver = availableSpace - (mNumColumns * requestedColumnWidth)
+                - ((mNumColumns - 1) * requestedHorizontalSpacing);
+
+        if (spaceLeftOver < 0) {
+            didNotInitiallyFit = true;
+        }
+
+        switch (mStretchMode) {
             case NO_STRETCH:
                 // Nobody stretches
                 mColumnWidth = requestedColumnWidth;
                 mHorizontalSpacing = requestedHorizontalSpacing;
                 break;
 
-            default:
-                int spaceLeftOver = availableSpace - (mNumColumns * requestedColumnWidth)
-                        - ((mNumColumns - 1) * requestedHorizontalSpacing);
-
-                if (spaceLeftOver < 0) {
-                    didNotInitiallyFit = true;
+            case STRETCH_COLUMN_WIDTH:
+                // Stretch the columns
+                mColumnWidth = requestedColumnWidth + spaceLeftOver / mNumColumns;
+                if (mNumColumns > 1) {
+                    mHorizontalSpacing = requestedHorizontalSpacing;
+                } else {
+                    mHorizontalSpacing = 0;
                 }
+                break;
 
-                switch (stretchMode) {
-                    case STRETCH_COLUMN_WIDTH:
-                        // Stretch the columns
-                        mColumnWidth = requestedColumnWidth + spaceLeftOver / mNumColumns;
-                        mHorizontalSpacing = requestedHorizontalSpacing;
-                        break;
-
-                    case STRETCH_SPACING:
-                        // Stretch the spacing between columns
-                        mColumnWidth = requestedColumnWidth;
-                        if (mNumColumns > 1) {
-                            mHorizontalSpacing = requestedHorizontalSpacing
-                                    + spaceLeftOver / (mNumColumns - 1);
-                        } else {
-                            mHorizontalSpacing = requestedHorizontalSpacing + spaceLeftOver;
-                        }
-                        break;
-
-                    case STRETCH_SPACING_UNIFORM:
-                        // Stretch the spacing between columns
-                        mColumnWidth = requestedColumnWidth;
-                        if (mNumColumns > 1) {
-                            mHorizontalSpacing = requestedHorizontalSpacing
-                                    + spaceLeftOver / (mNumColumns + 1);
-                        } else {
-                            mHorizontalSpacing = requestedHorizontalSpacing + spaceLeftOver;
-                        }
-                        break;
+            case STRETCH_SPACING:
+                // Stretch the spacing between columns
+                mColumnWidth = requestedColumnWidth;
+                if (mNumColumns > 1) {
+                    mHorizontalSpacing = requestedHorizontalSpacing
+                            + spaceLeftOver / (mNumColumns - 1);
+                } else {
+                    mHorizontalSpacing = spaceLeftOver;
                 }
-
                 break;
         }
+
         return didNotInitiallyFit;
     }
 
@@ -970,38 +948,28 @@ public class GridView extends AbsListView {
             widthSize += getVerticalScrollbarWidth();
         }
 
-        int childWidth = widthSize - mListPadding.left - mListPadding.right;
-        boolean didNotInitiallyFit = determineColumns(childWidth);
+        int availableSpace = widthSize - mListPadding.left - mListPadding.right;
+        boolean didNotInitiallyFit = determineColumns(availableSpace);
 
         int childHeight = 0;
         int childState = 0;
 
         mItemCount = mAdapter == null ? 0 : mAdapter.getCount();
         final int count = mItemCount;
-        if (count > 0) {
+        // ModernUI changed: avoid unnecessary measurement if heightMode is EXACTLY
+        if (count > 0 && (heightMode == MeasureSpec.UNSPECIFIED ||
+                heightMode == MeasureSpec.AT_MOST)) {
             final View child = obtainView(0, mIsScrap);
 
-            AbsListView.LayoutParams p = (AbsListView.LayoutParams) child.getLayoutParams();
-            if (p == null) {
-                p = (AbsListView.LayoutParams) generateDefaultLayoutParams();
-                child.setLayoutParams(p);
-            }
-            p.viewType = mAdapter.getItemViewType(0);
-            p.isEnabled = mAdapter.isEnabled(0);
-            p.forceAdd = true;
-
-            int childHeightSpec = getChildMeasureSpec(
-                    MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(heightMeasureSpec),
-                            MeasureSpec.UNSPECIFIED), 0, p.height);
-            int childWidthSpec = getChildMeasureSpec(
-                    MeasureSpec.makeMeasureSpec(mColumnWidth, MeasureSpec.EXACTLY), 0, p.width);
-            child.measure(childWidthSpec, childHeightSpec);
+            measureScrapChild(child, 0, heightSize);
 
             childHeight = child.getMeasuredHeight();
             childState = combineMeasuredStates(childState, child.getMeasuredState());
 
-            if (mRecycler.shouldRecycleViewType(p.viewType)) {
-                mRecycler.addScrapView(child, -1);
+            if (mRecycler.shouldRecycleViewType(
+                    ((LayoutParams) child.getLayoutParams()).viewType)) {
+                // ModernUI changed: position to 0
+                mRecycler.addScrapView(child, 0);
             }
         }
 
@@ -1027,17 +995,37 @@ public class GridView extends AbsListView {
             heightSize = ourSize;
         }
 
-        if (widthMode == MeasureSpec.AT_MOST && mRequestedNumColumns != AUTO_FIT) {
-            int ourSize = (mRequestedNumColumns * mColumnWidth)
-                    + ((mRequestedNumColumns - 1) * mHorizontalSpacing)
-                    + mListPadding.left + mListPadding.right;
-            if (ourSize > widthSize || didNotInitiallyFit) {
+        if (widthMode == MeasureSpec.AT_MOST) {
+            // ModernUI fixed:
+            if (didNotInitiallyFit) {
                 widthSize |= MEASURED_STATE_TOO_SMALL;
             }
         }
 
         setMeasuredDimension(widthSize, heightSize);
         mWidthMeasureSpec = widthMeasureSpec;
+    }
+
+    private void measureScrapChild(@NonNull View child, int position, int heightHint) {
+        AbsListView.LayoutParams p = (AbsListView.LayoutParams) child.getLayoutParams();
+        if (p == null) {
+            p = (AbsListView.LayoutParams) generateDefaultLayoutParams();
+            child.setLayoutParams(p);
+        }
+        p.viewType = mAdapter.getItemViewType(position);
+        p.isEnabled = mAdapter.isEnabled(position);
+        p.forceAdd = true;
+
+        int childHeightSpec = ViewGroup.getChildMeasureSpec(
+                MeasureSpec.makeMeasureSpec(heightHint, MeasureSpec.UNSPECIFIED), 0, p.height);
+        int childWidthSpec = ViewGroup.getChildMeasureSpec(
+                MeasureSpec.makeMeasureSpec(mColumnWidth, MeasureSpec.EXACTLY), 0, p.width);
+
+        child.measure(childWidthSpec, childHeightSpec);
+
+        // ModernUI changed: ensure needToMeasure is true in the future,
+        // since measureSpec is changed in the same layout pass
+        child.forceLayout();
     }
 
     @Override
@@ -1348,6 +1336,8 @@ public class GridView extends AbsListView {
         } else {
             p.forceAdd = false;
             addViewInLayout(child, where, p, true);
+            // add view in layout will reset the RTL properties. We have to re-resolve them
+            child.resolveRtlPropertiesIfNeeded();
         }
 
         if (needToMeasure) {
@@ -1837,7 +1827,7 @@ public class GridView extends AbsListView {
 
     /**
      * Set the gravity for this grid. Gravity describes how the child views
-     * are horizontally aligned. Defaults to Gravity.LEFT
+     * are horizontally aligned. Defaults to {@link Gravity#START}.
      *
      * @param gravity the gravity to apply to this grid's children
      */
@@ -1933,16 +1923,24 @@ public class GridView extends AbsListView {
      * Control how items are stretched to fill their space.
      *
      * @param stretchMode Either {@link #NO_STRETCH},
-     *                    {@link #STRETCH_SPACING}, {@link #STRETCH_SPACING_UNIFORM}, or {@link #STRETCH_COLUMN_WIDTH}.
+     *                    {@link #STRETCH_SPACING}, or {@link #STRETCH_COLUMN_WIDTH}.
      */
-    public void setStretchMode(@StretchMode int stretchMode) {
+    public void setStretchMode(@MagicConstant(intValues = {
+            NO_STRETCH,
+            STRETCH_SPACING,
+            STRETCH_COLUMN_WIDTH
+    }) int stretchMode) {
         if (stretchMode != mStretchMode) {
             mStretchMode = stretchMode;
             requestLayoutIfNecessary();
         }
     }
 
-    @StretchMode
+    @MagicConstant(intValues = {
+            NO_STRETCH,
+            STRETCH_SPACING,
+            STRETCH_COLUMN_WIDTH
+    })
     public int getStretchMode() {
         return mStretchMode;
     }

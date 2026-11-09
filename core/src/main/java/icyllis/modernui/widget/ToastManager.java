@@ -1,19 +1,19 @@
 /*
- * Modern UI.
- * Copyright (C) 2019-2023 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2021-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package icyllis.modernui.widget;
@@ -37,6 +37,10 @@ import org.slf4j.MarkerFactory;
 import javax.annotation.concurrent.GuardedBy;
 import java.util.ArrayDeque;
 
+/**
+ * @hide
+ * @hidden
+ */
 @ApiStatus.Internal
 public final class ToastManager {
 
@@ -94,14 +98,14 @@ public final class ToastManager {
         mTextView.setText(r.mText);
         mTextView.setTextSize(14);
         if (theme.resolveAttribute(R.ns, R.attr.textColorPrimary, value, true))
-            mTextView.setTextColor(theme.getResources().loadColorStateList(value, theme));
+            mTextView.setTextColor(theme.getResources().loadColorStateList(value, null, theme));
         mTextView.setTypeface(ModernUI.getSelectedTypeface());
         mTextView.setMaxWidth(mTextView.dp(300));
         mTextView.setPadding(mTextView.dp(16), mTextView.dp(12), mTextView.dp(16), mTextView.dp(12));
         mParams.y = mTextView.dp(64);
         ShapeDrawable bg = new ShapeDrawable();
         if (theme.resolveAttribute(R.ns, R.attr.colorBackground, value, true))
-            bg.setColor(value.data);
+            bg.setColor(mTextView.getContext().getResources().loadColorStateList(value, null, theme));
         bg.setCornerRadius(mTextView.dp(28));
         mTextView.setBackground(bg);
         mTextView.setElevation(mTextView.dp(2));
@@ -119,14 +123,25 @@ public final class ToastManager {
                 ToastRecord record = getToastLocked(mCurrentToastShown);
                 mCurrentToastShown = null;
                 if (record != null) {
-                    cancelToastLocked(record);
+                    cancelToastLocked(record, true);
                 }
             }
         }
     }
 
-    private void cancelToastLocked(@NonNull ToastRecord record) {
-        mWindowManager.removeView(mTextView);
+    private void cancelToastLocked(@NonNull ToastRecord record, boolean fromCallback) {
+        boolean hide = fromCallback;
+
+        if (record.mToken == mCurrentToastShown) {
+            assert !fromCallback;
+            Core.getUiHandlerAsync().removeCallbacks(mDurationReached);
+            mCurrentToastShown = null;
+            hide = true;
+        }
+
+        if (hide) {
+            mWindowManager.removeView(mTextView);
+        }
         mToastQueue.remove(record);
 
         if (mToastQueue.size() > 0) {
@@ -158,7 +173,7 @@ public final class ToastManager {
         synchronized (mToastQueue) {
             ToastRecord r = getToastLocked(token);
             if (r != null) {
-                cancelToastLocked(r);
+                cancelToastLocked(r, false);
             } else {
                 Log.LOGGER.warn(MARKER, "Toast already cancelled. token={}", token);
             }

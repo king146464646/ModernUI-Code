@@ -1,0 +1,34 @@
+/*
+ * ModernUI.
+ * Copyright (C) 2021-2026 BloCamLimb. All rights reserved.
+ *
+ * ModernUI is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 3 of the License, or (at your option) any later version.
+ *
+ * ModernUI is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+package icyllis.modernui.graphics.text;
+
+/**
+ * Implement this interface if your {@link CharSequence} has a {@link String#getChars(int, int, char[], int)}
+ * method like the one in {@link String} that is faster than calling {@link CharSequence#charAt(int)} multiple times.
+ * <p>
+ * Use {@link CharUtils#getChars(CharSequence, int, int, char[], int)}.
+ */
+// Moved from text to graphics.text
+public interface GetChars extends CharSequence {
+
+    /**
+     * @throws IndexOutOfBoundsException if out of range
+     */
+    void getChars(int srcBegin, int srcEnd, char[] dst, int dstBegin);
+}

@@ -1,28 +1,27 @@
 /*
- * Modern UI.
- * Copyright (C) 2019-2022 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2019-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package icyllis.modernui.util;
 
+import icyllis.modernui.annotation.Nullable;
 import it.unimi.dsi.fastutil.booleans.BooleanArrays;
 import it.unimi.dsi.fastutil.ints.IntArrays;
 
-import javax.annotation.Nullable;
-import java.util.Arrays;
 import java.util.Objects;
 
 /**
@@ -92,7 +91,7 @@ public class SparseBooleanArray implements Cloneable {
      * if no such mapping has been made.
      */
     public boolean get(int key, boolean defaultValue) {
-        int i = Arrays.binarySearch(mKeys, 0, mSize, key);
+        int i = ContainerHelpers.binarySearch(mKeys, 0, mSize, key);
 
         if (i < 0) {
             return defaultValue;
@@ -105,7 +104,7 @@ public class SparseBooleanArray implements Cloneable {
      * Removes the mapping from the specified key, if there was any.
      */
     public void delete(int key) {
-        int i = Arrays.binarySearch(mKeys, 0, mSize, key);
+        int i = ContainerHelpers.binarySearch(mKeys, 0, mSize, key);
 
         if (i >= 0) {
             System.arraycopy(mKeys, i + 1, mKeys, i, mSize - (i + 1));
@@ -130,7 +129,7 @@ public class SparseBooleanArray implements Cloneable {
      * was one.
      */
     public void put(int key, boolean value) {
-        int i = Arrays.binarySearch(mKeys, 0, mSize, key);
+        int i = ContainerHelpers.binarySearch(mKeys, 0, mSize, key);
 
         if (i >= 0) {
             mValues[i] = value;
@@ -201,7 +200,7 @@ public class SparseBooleanArray implements Cloneable {
      * key is not mapped.
      */
     public int indexOfKey(int key) {
-        return Arrays.binarySearch(mKeys, 0, mSize, key);
+        return ContainerHelpers.binarySearch(mKeys, 0, mSize, key);
     }
 
     /**

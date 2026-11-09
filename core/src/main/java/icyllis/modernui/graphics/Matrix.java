@@ -1,25 +1,27 @@
 /*
- * Modern UI.
- * Copyright (C) 2019-2022 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2019-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package icyllis.modernui.graphics;
 
+import icyllis.arc3d.core.Matrix4c;
 import icyllis.modernui.annotation.NonNull;
 import icyllis.modernui.annotation.Nullable;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * This class represents a 3x3 matrix and a 2D transformation, its components
@@ -63,6 +65,20 @@ public class Matrix extends icyllis.arc3d.sketch.Matrix {
                   float shearX, float scaleY, float persp1,
                   float transX, float transY, float persp2) {
         super(scaleX, shearY, persp0, shearX, scaleY, persp1, transX, transY, persp2);
+    }
+
+    /**
+     * Converts this 4x4 matrix to 3x3 matrix, the third row and column are discarded.
+     * <pre>{@code
+     * [ a b x c ]      [ a b c ]
+     * [ d e x f ]  ->  [ d e f ]
+     * [ x x x x ]      [ g h i ]
+     * [ g h x i ]
+     * }</pre>
+     */
+    @ApiStatus.Experimental
+    public Matrix(@NonNull Matrix4c m) {
+        super(m);
     }
 
     /**

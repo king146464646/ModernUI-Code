@@ -1,19 +1,19 @@
 /*
- * Modern UI.
- * Copyright (C) 2025 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2025-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package icyllis.modernui.material.drawable;
@@ -23,6 +23,7 @@ import icyllis.modernui.animation.Animator;
 import icyllis.modernui.annotation.NonNull;
 import icyllis.modernui.annotation.Nullable;
 import icyllis.modernui.graphics.Canvas;
+import icyllis.modernui.graphics.Color;
 import icyllis.modernui.graphics.Paint;
 import icyllis.modernui.graphics.Rect;
 import icyllis.modernui.material.MaterialDrawable;
@@ -55,7 +56,7 @@ public class CheckboxButtonDrawable extends MaterialDrawable {
     private final float[] mRightQuad = new float[8];
 
     private ColorStateList mIconTint;
-    private int mIconColor = ~0;
+    private long mIconColor = Color.WHITE_LONG;
 
     // -1: init, 0: unchecked, 1: checked, 2: indeterminate
     private int mCurState = -1;
@@ -77,7 +78,7 @@ public class CheckboxButtonDrawable extends MaterialDrawable {
         }
         Paint paint = Paint.obtain();
         paint.setColor(mColor);
-        paint.setAlphaF(paint.getAlphaF() * mAlpha * (1 / 255f));
+        paint.setAlphaF(paint.getAlphaF() * mAlpha);
         final Rect r = getBounds();
         canvas.save();
         canvas.translate(r.exactCenterX(), r.exactCenterY());
@@ -96,11 +97,13 @@ public class CheckboxButtonDrawable extends MaterialDrawable {
         }
 
         paint.setColor(mIconColor);
-        paint.setAlphaF(mAlpha * (1 / 255f) * paint.getAlphaF());
+        paint.setAlphaF(mAlpha * paint.getAlphaF());
 
         if (mHoleRadius <= 0) {
-            canvas.drawEdgeAAQuad(null, mLeftQuad, Canvas.QUAD_AA_FLAG_TOP|Canvas.QUAD_AA_FLAG_RIGHT|Canvas.QUAD_AA_FLAG_BOTTOM, paint);
-            canvas.drawEdgeAAQuad(null, mRightQuad, Canvas.QUAD_AA_FLAG_TOP|Canvas.QUAD_AA_FLAG_RIGHT|Canvas.QUAD_AA_FLAG_BOTTOM, paint);
+            canvas.drawEdgeAAQuad(null, mLeftQuad, 0,
+                    Canvas.EDGE_AA_FLAG_TOP | Canvas.EDGE_AA_FLAG_RIGHT | Canvas.EDGE_AA_FLAG_BOTTOM, paint);
+            canvas.drawEdgeAAQuad(null, mRightQuad, 0,
+                    Canvas.EDGE_AA_FLAG_TOP | Canvas.EDGE_AA_FLAG_RIGHT | Canvas.EDGE_AA_FLAG_BOTTOM, paint);
         }
 
         canvas.restore();
@@ -111,9 +114,9 @@ public class CheckboxButtonDrawable extends MaterialDrawable {
         if (mIconTint != iconTint) {
             mIconTint = iconTint;
             if (iconTint != null) {
-                mIconColor = iconTint.getColorForState(getState(), ~0);
+                mIconColor = iconTint.getColorForState(getState(), Color.WHITE_LONG);
             } else {
-                mIconColor = ~0;
+                mIconColor = Color.WHITE_LONG;
             }
             invalidateSelf();
         }
@@ -129,7 +132,7 @@ public class CheckboxButtonDrawable extends MaterialDrawable {
         boolean changed = super.onStateChange(stateSet);
 
         if (mIconTint != null) {
-            mIconColor = mIconTint.getColorForState(stateSet, ~0);
+            mIconColor = mIconTint.getColorForState(stateSet, Color.WHITE_LONG);
             changed = true;
         }
 

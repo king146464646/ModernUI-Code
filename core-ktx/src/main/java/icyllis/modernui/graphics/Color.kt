@@ -1,19 +1,19 @@
 /*
- * Modern UI.
- * Copyright (C) 2019-2024 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2019-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  */
 
 @file:Suppress("NOTHING_TO_INLINE")
@@ -21,6 +21,7 @@
 package icyllis.modernui.graphics
 
 import icyllis.modernui.annotation.ColorInt
+import icyllis.modernui.annotation.ColorLong
 
 /**
  * Return the alpha component of a color int. This is equivalent to calling:
@@ -125,3 +126,91 @@ inline operator fun @receiver:ColorInt Int.component4(): Int = this and 0xff
  */
 @ColorInt
 inline fun String.toColorInt(): Int = Color.parseColor(this)
+
+/**
+ * Return the red component of a color long. This is equivalent to calling:
+ * ```
+ * Color.red(myLong)
+ * ```
+ */
+inline val @receiver:ColorLong Long.red: Float get() = Color.red(this)
+
+/**
+ * Return the green component of a color long. This is equivalent to calling:
+ * ```
+ * Color.green(myLong)
+ * ```
+ */
+inline val @receiver:ColorLong Long.green: Float get() = Color.green(this)
+
+/**
+ * Return the blue component of a color long. This is equivalent to calling:
+ * ```
+ * Color.blue(myLong)
+ * ```
+ */
+inline val @receiver:ColorLong Long.blue: Float get() = Color.blue(this)
+
+/**
+ * Return the alpha component of a color long. This is equivalent to calling:
+ * ```
+ * Color.alpha(myLong)
+ * ```
+ */
+inline val @receiver:ColorLong Long.alpha: Float get() = Color.alpha(this)
+
+/**
+ * Return the red component of a color long. This is equivalent to calling:
+ * ```
+ * Color.red(myLong)
+ * ```
+ *
+ * This method allows to use destructuring declarations when working with colors,
+ * for example:
+ * ```
+ * val (red, green, blue, alpha) = myColor
+ * ```
+ */
+inline operator fun @receiver:ColorLong Long.component1(): Float = Color.red(this)
+
+/**
+ * Return the green component of a color long. This is equivalent to calling:
+ * ```
+ * Color.green(myLong)
+ * ```
+ *
+ * This method allows to use destructuring declarations when working with colors,
+ * for example:
+ * ```
+ * val (red, green, blue, alpha) = myColor
+ * ```
+ */
+inline operator fun @receiver:ColorLong Long.component2(): Float = Color.green(this)
+
+/**
+ * Return the blue component of a color long. This is equivalent to calling:
+ * ```
+ * Color.blue(myLong)
+ * ```
+ *
+ * This method allows to use destructuring declarations when working with colors,
+ * for example:
+ * ```
+ * val (red, green, blue, alpha) = myColor
+ * ```
+ */
+inline operator fun @receiver:ColorLong Long.component3(): Float = Color.blue(this)
+
+/**
+ * Return the alpha component of a color long. This is equivalent to calling:
+ * ```
+ * Color.alpha(myLong)
+ * ```
+ *
+ * This method allows to use destructuring declarations when working with colors,
+ * for example:
+ * ```
+ * val (red, green, blue, alpha) = myColor
+ * ```
+ */
+inline operator fun @receiver:ColorLong Long.component4(): Float = Color.alpha(this)

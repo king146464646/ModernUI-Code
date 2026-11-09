@@ -1,19 +1,19 @@
 /*
- * Modern UI.
- * Copyright (C) 2024 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2024-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package icyllis.modernui.graphics.drawable;
@@ -128,7 +128,7 @@ public class GradientDrawable extends ShapeDrawable {
     private float mGradientRadius;
 
     public GradientDrawable() {
-        this(new GradientState(DEFAULT_ORIENTATION, null), null);
+        this(new GradientState(DEFAULT_ORIENTATION, (int[]) null), null);
     }
 
     /**
@@ -139,16 +139,28 @@ public class GradientDrawable extends ShapeDrawable {
         this(new GradientState(orientation, colors), null);
     }
 
+    /**
+     * Create a new gradient drawable given an orientation and an array
+     * of colors for the gradient.
+     */
+    public GradientDrawable(@NonNull Orientation orientation, @Nullable @ColorLong long[] colors) {
+        this(new GradientState(orientation, colors), null);
+    }
+
     @Override
     void updateGradient() {
         final GradientState st = mGradientState;
 
-        int[] gradientColors = null;
+        float[] gradientColors = null;
         if (st.mGradientColors != null) {
-            gradientColors = new int[st.mGradientColors.length];
-            for (int i = 0; i < gradientColors.length; i++) {
+            gradientColors = new float[st.mGradientColors.length * 4];
+            for (int i = 0; i < st.mGradientColors.length; i++) {
                 if (st.mGradientColors[i] != null) {
-                    gradientColors[i] = st.mGradientColors[i].getDefaultColor();
+                    long color = st.mGradientColors[i].getDefaultColor();
+                    gradientColors[i * 4] = Color.red(color);
+                    gradientColors[i * 4 + 1] = Color.green(color);
+                    gradientColors[i * 4 + 2] = Color.blue(color);
+                    gradientColors[i * 4 + 3] = Color.alpha(color);
                 }
             }
         }
@@ -194,7 +206,7 @@ public class GradientDrawable extends ShapeDrawable {
                 }
 
                 mFillPaint.setShader(new LinearGradient(x0, y0, x1, y1,
-                        gradientColors, st.mPositions, Shader.TileMode.CLAMP, null));
+                        gradientColors, null, st.mPositions, Shader.TileMode.CLAMP, null));
             } else if (st.mGradient == RADIAL_GRADIENT) {
                 x0 = r.left + r.width() * st.mCenterX;
                 y0 = r.top + r.height() * st.mCenterY;
@@ -223,7 +235,7 @@ public class GradientDrawable extends ShapeDrawable {
                 }
 
                 mFillPaint.setShader(new RadialGradient(x0, y0, radius,
-                        gradientColors, st.mPositions, Shader.TileMode.CLAMP, null));
+                        gradientColors, null, st.mPositions, Shader.TileMode.CLAMP, null));
             } else if (st.mGradient == ANGULAR_GRADIENT) {
                 x0 = r.left + r.width() * st.mCenterX;
                 y0 = r.top + r.height() * st.mCenterY;
@@ -233,7 +245,7 @@ public class GradientDrawable extends ShapeDrawable {
                 matrix.setRotate(-90 * MathUtil.DEG_TO_RAD, x0, y0);
 
                 mFillPaint.setShader(new AngularGradient(x0, y0, 0, sweep,
-                        gradientColors, st.mPositions, Shader.TileMode.CLAMP, matrix));
+                        gradientColors, null, st.mPositions, Shader.TileMode.CLAMP, matrix));
             }
 
             // If we don't have a solid color, the alpha channel must be
@@ -242,7 +254,7 @@ public class GradientDrawable extends ShapeDrawable {
                 mFillPaint.setColor4f(1f, 1f, 1f, 1f);
             }
         } else {
-            // added by Modern UI: clear shader
+            // added by ModernUI: clear shader
             mFillPaint.setShader(null);
         }
     }
@@ -458,6 +470,24 @@ public class GradientDrawable extends ShapeDrawable {
     }
 
     /**
+     * Sets the colors used to draw the gradient.
+     * <p>
+     * Each color is specified as a wide color and the array must contain at
+     * least 2 colors.
+     * <p>
+     * <strong>Note</strong>: changing colors will affect all instances of a
+     * drawable loaded from a resource. It is recommended to invoke
+     * {@link #mutate()} before changing the colors.
+     *
+     * @param colors an array containing 2 or more wide colors
+     * @see #mutate()
+     * @see #setColor(long)
+     */
+    public void setColors(@Nullable @ColorLong long[] colors) {
+        setColors(colors, null);
+    }
+
+    /**
      * Sets the colors and offsets used to draw the gradient.
      * <p>
      * Each color is specified as an ARGB integer and the array must contain at
@@ -481,6 +511,29 @@ public class GradientDrawable extends ShapeDrawable {
     }
 
     /**
+     * Sets the colors and offsets used to draw the gradient.
+     * <p>
+     * Each color is specified as a wide long and the array must contain at
+     * least 2 colors.
+     * <p>
+     * <strong>Note</strong>: changing colors will affect all instances of a
+     * drawable loaded from a resource. It is recommended to invoke
+     * {@link #mutate()} before changing the colors.
+     *
+     * @param colors an array containing 2 or more wide colors
+     * @param offsets optional array of floating point parameters representing the positions
+     *                of the colors. Null evenly disperses the colors
+     * @see #mutate()
+     * @see #setColors(long[])
+     */
+    public void setColors(@Nullable @ColorLong long[] colors, @Nullable float[] offsets) {
+        mGradientState.setGradientColors(colors);
+        mGradientState.mPositions = offsets;
+        mShapeIsDirty = true;
+        invalidateSelf();
+    }
+
+    /**
      * Returns the colors used to draw the gradient, or {@code null} if the
      * gradient is drawn using a single color or no colors.
      *
@@ -488,11 +541,11 @@ public class GradientDrawable extends ShapeDrawable {
      * @see #setColors(int[] colors)
      */
     @Nullable
-    public int[] getColors() {
+    public long[] getColors() {
         if (mGradientState.mGradientColors == null) {
             return null;
         } else {
-            int[] colors = new int[mGradientState.mGradientColors.length];
+            long[] colors = new long[mGradientState.mGradientColors.length];
             for (int i = 0; i < mGradientState.mGradientColors.length; i++) {
                 if (mGradientState.mGradientColors[i] != null) {
                     colors[i] = mGradientState.mGradientColors[i].getDefaultColor();
@@ -557,6 +610,11 @@ public class GradientDrawable extends ShapeDrawable {
             setGradientColors(gradientColors);
         }
 
+        public GradientState(@NonNull Orientation orientation, @Nullable long[] gradientColors) {
+            mOrientation = orientation;
+            setGradientColors(gradientColors);
+        }
+
         public GradientState(@NonNull GradientState orig, @Nullable Resources res) {
             super(orig, res);
             mGradient = orig.mGradient;
@@ -601,6 +659,23 @@ public class GradientDrawable extends ShapeDrawable {
             computeOpacity();
         }
 
+        public void setGradientColors(@Nullable long[] colors) {
+            if (colors == null) {
+                mGradientColors = null;
+            } else {
+                // allocate new CSL array only if the size of the current array is different
+                // from the size of the given parameter
+                if (mGradientColors == null || mGradientColors.length != colors.length) {
+                    mGradientColors = new ColorStateList[colors.length];
+                }
+                for (int i = 0; i < colors.length; i++) {
+                    mGradientColors[i] = ColorStateList.valueOf(colors[i]);
+                }
+            }
+            mSolidColors = null;
+            computeOpacity();
+        }
+
         @Override
         public void setSolidColors(@Nullable ColorStateList colors) {
             mGradientColors = null;
@@ -614,7 +689,7 @@ public class GradientDrawable extends ShapeDrawable {
             if (mGradientColors != null) {
                 for (int i = 0; i < mGradientColors.length; i++) {
                     if (mGradientColors[i] != null
-                            && (mGradientColors[i].getDefaultColor() >>> 24) != 0xff) {
+                            && Color.alpha(mGradientColors[i].getDefaultColor()) != 1.0f) {
                         return;
                     }
                 }

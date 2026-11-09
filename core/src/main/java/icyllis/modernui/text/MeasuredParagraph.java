@@ -1,19 +1,19 @@
 /*
- * Modern UI.
- * Copyright (C) 2021-2025 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2021-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package icyllis.modernui.text;
@@ -25,6 +25,7 @@ import icyllis.modernui.annotation.IntRange;
 import icyllis.modernui.annotation.NonNull;
 import icyllis.modernui.annotation.Nullable;
 import icyllis.modernui.graphics.MathUtil;
+import icyllis.modernui.graphics.text.CharUtils;
 import icyllis.modernui.graphics.text.FontMetricsInt;
 import icyllis.modernui.graphics.text.FontPaint;
 import icyllis.modernui.graphics.text.LineBreakConfig;
@@ -33,10 +34,10 @@ import icyllis.modernui.text.style.MetricAffectingSpan;
 import icyllis.modernui.text.style.ReplacementSpan;
 import icyllis.modernui.util.Pools;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
+import org.jetbrains.annotations.ApiStatus;
 
 import javax.annotation.concurrent.NotThreadSafe;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 
 /**
@@ -49,7 +50,10 @@ import java.util.List;
  * a rich text under Unicode specification and internationalization standards.
  *
  * @see MeasuredText
+ * @hidden
  */
+@SuppressWarnings("ForLoopReplaceableByForEach")
+@ApiStatus.Internal
 @NotThreadSafe
 public class MeasuredParagraph {
 
@@ -109,8 +113,12 @@ public class MeasuredParagraph {
      */
     public void release() {
         reset();
-        mSpanEndCache.trim();
-        mFontMetrics.trim();
+        if (mSpanEndCache.elements().length > 10000) {
+            mSpanEndCache.trim();
+        }
+        if (mFontMetrics.elements().length > 10000) {
+            mFontMetrics.trim();
+        }
     }
 
     /**
@@ -215,7 +223,7 @@ public class MeasuredParagraph {
         for (int i = 0; i < bidi.getRunCount(); ++i) {
             int vIndex;
             if ((mBidi.getBaseLevel() & 0x01) == 1) {
-                // For the historical reasons, if the base directionality is RTL, ModernUI
+                // For the historical reasons, if the base directionality is RTL, TextLine
                 // draws from the right, i.e. the visually reordered run needs to be reversed.
                 vIndex = visualOrders[bidi.getRunCount() - i - 1];
             } else {
@@ -270,14 +278,10 @@ public class MeasuredParagraph {
 
     /**
      * Returns the advance of the char at the given index of the text buffer.
+     * This is per-cluster advance and font-dependent.
      * <p>
-     * This follows grapheme cluster break. For example: there are 6 chars (uint_16),
-     * the first two are the first grapheme, the last four are the second one.
-     * Then mAdvances[0] is for the first grapheme, mAdvances[2] for the second one,
-     * other elements are zero. It's in the same order of {@link #getChars()}
-     * <p>
-     * This is available only if the MeasuredParagraph is computed with buildForMeasurement.
-     * Returns empty array in other cases.
+     * This is available only if the MeasuredParagraph is computed with buildForStaticLayout.
+     * Returns 0 in other cases.
      *
      * @param offset the char index with start offset
      * @return advance
@@ -292,6 +296,7 @@ public class MeasuredParagraph {
 
     /**
      * Returns the advance of the given range.
+     * This is per-cluster advance and font-dependent.
      * <p>
      * This is not available if the MeasuredParagraph is computed with buildForBidi.
      * Returns 0 if the MeasuredParagraph is computed with buildForBidi.
@@ -385,21 +390,22 @@ public class MeasuredParagraph {
         if (end > start) {
             final MeasuredText.Builder builder = new MeasuredText.Builder(c.mCopiedBuffer)
                     .setComputeLayout(fullLayout);
+            // ModernUI changed: use SpanSet to get and remove empty spans for the subrange
+            // to avoid situations where the source text has too many paragraphs,
+            // but we only care about one paragraph at a time.
+            final SpanSet<MetricAffectingSpan> spans = new SpanSet<>(MetricAffectingSpan.class);
             if (c.mSpanned == null) {
                 // No style change by MetricsAffectingSpan. Just measure all text.
-                c.applyMetricsAffectingSpan(paint, lineBreakConfig, /*spans*/Collections.emptyList(), start, end,
+                c.applyMetricsAffectingSpan(paint, lineBreakConfig, spans, start, end,
                         builder);
                 c.mSpanEndCache.add(end);
             } else {
                 // There may be a MetricsAffectingSpan. Split into span transitions and apply
                 // styles.
+                spans.init(c.mSpanned, start, end);
                 int spanEnd;
                 for (int spanStart = start; spanStart < end; spanStart = spanEnd) {
-                    spanEnd = c.mSpanned.nextSpanTransition(spanStart, end,
-                            MetricAffectingSpan.class);
-                    List<MetricAffectingSpan> spans = c.mSpanned.getSpans(spanStart, spanEnd,
-                            MetricAffectingSpan.class);
-                    spans = TextUtils.removeEmptySpans(spans, c.mSpanned);
+                    spanEnd = spans.getNextTransition(spanStart, end);
                     c.applyMetricsAffectingSpan(paint, lineBreakConfig, spans, spanStart, spanEnd,
                             builder);
                     c.mSpanEndCache.add(spanEnd);
@@ -420,7 +426,7 @@ public class MeasuredParagraph {
         if (mCopiedBuffer == null || mCopiedBuffer.length != length) {
             mCopiedBuffer = new char[length];
         }
-        TextUtils.getChars(text, start, end, mCopiedBuffer, 0);
+        CharUtils.getChars(text, start, end, mCopiedBuffer, 0);
 
         // Replace characters associated with ReplacementSpan to U+FFFC.
         if (mSpanned != null) {
@@ -441,7 +447,7 @@ public class MeasuredParagraph {
         if ((dir == TextDirectionHeuristics.LTR
                 || dir == TextDirectionHeuristics.FIRSTSTRONG_LTR
                 || dir == TextDirectionHeuristics.ANYRTL_LTR)
-                && !Bidi.requiresBidi(mCopiedBuffer, 0, length)) {
+                && !TextUtils.couldAffectRtl(mCopiedBuffer, 0, length)) {
             mBidi = null;
         } else {
             final byte paraLevel;
@@ -465,8 +471,8 @@ public class MeasuredParagraph {
                 // Historically, the MeasuredParagraph does not treat the CR letters as paragraph
                 // breaker but ICU BiDi treats it as paragraph breaker. In the MeasureParagraph,
                 // the given range always represents a single paragraph, so if the BiDi object has
-                // multiple paragraph, it should contains a CR letters in the text. Using CR is not
-                // common in ModernUI and also it should not penalize the easy case, e.g. all LTR,
+                // multiple paragraph, it should contain a CR letters in the text. Using CR is not
+                // common and also it should not penalize the easy case, e.g. all LTR,
                 // check the paragraph count here and replace the CR letters and re-calculate
                 // BiDi again.
                 for (int i = 0; i < length; ++i) {
@@ -487,7 +493,7 @@ public class MeasuredParagraph {
     private void applyMetricsAffectingSpan(
             @NonNull TextPaint paint,
             @Nullable LineBreakConfig lineBreakConfig,
-            @NonNull List<MetricAffectingSpan> spans,
+            @NonNull SpanSet<MetricAffectingSpan> spans,
             @IntRange(from = 0) int start,
             @IntRange(from = 0) int end,
             @NonNull MeasuredText.Builder builder) {
@@ -498,6 +504,9 @@ public class MeasuredParagraph {
 
         ReplacementSpan replacement = null;
         for (int i = 0, e = spans.size(); i < e; i++) {
+            // empty spans are already removed
+            if ((spans.spanStarts[i] >= end)
+                    || (spans.spanEnds[i] <= start)) continue;
             MetricAffectingSpan span = spans.get(i);
             if (span instanceof ReplacementSpan) {
                 // The last ReplacementSpan is effective for backward compatibility reasons.
@@ -551,40 +560,6 @@ public class MeasuredParagraph {
                     level = mBidi.getLevelAt(levelEnd);
                 }
             }
-        }
-    }
-
-    /**
-     * Returns the maximum index that the accumulated width not exceeds the width.
-     * <p>
-     * If forward=false is passed, returns the minimum index from the end instead.
-     * <p>
-     * This only works if the MeasuredParagraph is computed with buildForMeasurement.
-     * Undefined behavior in other case.
-     */
-    int breakText(int limit, boolean forwards, float width) {
-        MeasuredText mt = mMeasuredText;
-        assert mt != null;
-        if (forwards) {
-            int i = 0;
-            while (i < limit) {
-                width -= mt.getAdvance(i);
-                if (width < 0.0f) break;
-                i++;
-            }
-            while (i > 0 && mCopiedBuffer[i - 1] == ' ') i--;
-            return i;
-        } else {
-            int i = limit - 1;
-            while (i >= 0) {
-                width -= mt.getAdvance(i);
-                if (width < 0.0f) break;
-                i--;
-            }
-            while (i < limit - 1 && (mCopiedBuffer[i + 1] == ' ' || mt.getAdvance(i + 1) == 0.0f)) {
-                i++;
-            }
-            return limit - i - 1;
         }
     }
 

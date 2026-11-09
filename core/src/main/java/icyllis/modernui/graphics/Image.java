@@ -1,35 +1,47 @@
 /*
- * Modern UI.
- * Copyright (C) 2021-2025 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2021-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package icyllis.modernui.graphics;
 
-import icyllis.arc3d.core.*;
+import icyllis.arc3d.core.ColorInfo;
+import icyllis.arc3d.core.ColorSpace;
+import icyllis.arc3d.core.ImageInfo;
+import icyllis.arc3d.core.RawPtr;
+import icyllis.arc3d.core.RefCnt;
+import icyllis.arc3d.core.SharedPtr;
 import icyllis.arc3d.granite.RecordingContext;
+import icyllis.modernui.ModernUI;
 import icyllis.modernui.annotation.NonNull;
 import icyllis.modernui.annotation.Nullable;
 import icyllis.modernui.core.Core;
 import icyllis.modernui.graphics.drawable.ImageDrawable;
+import icyllis.modernui.resources.IOUtil;
+import icyllis.modernui.resources.ResourceId;
+import icyllis.modernui.resources.Resources;
 import icyllis.modernui.util.DisplayMetrics;
 import org.jetbrains.annotations.ApiStatus;
 
 import java.lang.ref.Cleaner;
 import java.lang.ref.Reference;
 import java.util.Objects;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.FutureTask;
+import java.util.function.BiFunction;
 
 /**
  * {@code Image} describes a two-dimensional array of pixels to sample from. The pixels
@@ -57,6 +69,9 @@ public class Image implements AutoCloseable {
     private volatile icyllis.arc3d.sketch.Image mImage;
     private final Cleaner.Cleanable mCleanup;
 
+    // keep a strong reference to prevent it from being garbage collected
+    private ConstantState mConstantState;
+
     int mDensity = DisplayMetrics.DENSITY_DEFAULT;
 
     private Image(@SharedPtr icyllis.arc3d.sketch.Image image) {
@@ -70,37 +85,80 @@ public class Image implements AutoCloseable {
     }
 
     /**
-     * Create an image that backed by a GPU texture with the given bitmap.
-     * Whether the bitmap is immutable or not, the bitmap can be safely closed
-     * after the call.
+     * Creates an image backed by a GPU texture from the given bitmap.
      * <p>
-     * Must be called after render system and UI system are initialized successfully,
-     * must be called from UI thread.
+     * If you want to create an image for a specific sub-region of the given bitmap,
+     * you should first call {@link Bitmap#subImage(int, int, int, int)} to obtain
+     * the sub-image view, and then pass the resulting bitmap to this method.
      * <p>
-     * This method may fail if:
+     * The bitmap may be safely closed after this call returns, regardless of whether
+     * it is immutable. However, it must remain open during the execution of this call.
+     * <p>
+     * As of version 3.13.0, this method is thread-safe and can be invoked from any
+     * thread except the internal rendering thread. Note that calling this from a
+     * non-UI thread will block the caller until the operation is completed on the UI thread.
+     * <p>
+     * <b>Legacy Note (Pre-3.13.0):</b> This method was restricted to the UI thread and
+     * required both the render and UI systems to be fully initialized before invocation.
+     * <p>
+     * This method may return {@code null} if:
      * <ul>
-     * <li>Bitmap is null or closed</li>
-     * <li>GPU device is lost (disconnected)</li>
-     * <li>The width or height of the bitmap exceeds the maximum dimension supported by the GPU</li>
-     * <li>The format of bitmap is not directly or indirectly supported by the GPU</li>
-     * <li>Unable to allocate sufficient GPU-only memory for the GPU texture</li>
-     * <li>Unable to allocate sufficient host memory for the staging buffer</li>
+     * <li>The bitmap is null or already closed.</li>
+     * <li>The GPU device is lost or disconnected.</li>
+     * <li>The GPU device is not yet initialized.</li>
+     * <li>The width or height of the bitmap exceeds the maximum texture dimension supported by the GPU.</li>
+     * <li>The bitmap format is not supported (directly or indirectly) by the GPU.</li>
+     * <li>Failed to allocate sufficient GPU-only memory for the texture.</li>
+     * <li>Failed to allocate sufficient host memory for the staging buffer.</li>
+     * <li>The UI thread is quitting.</li>
      * </ul>
      *
      * @param bitmap the source bitmap
-     * @return image, or null if failed
-     * @throws NullPointerException  no GPU context
-     * @throws IllegalStateException not call from UI thread
+     * @return the created image, or {@code null} if the operation failed.
      */
     @Nullable
-    public static Image createTextureFromBitmap(Bitmap bitmap) {
+    public static Image createTextureFromBitmap(@Nullable Bitmap bitmap) {
         if (bitmap == null || bitmap.isClosed()) {
             return null;
         }
-        return createTextureFromBitmap(
-                Core.requireUiRecordingContext(),
-                bitmap
+        var uiRecordingContext = Core.peekUiRecordingContext();
+        if (uiRecordingContext == null) {
+            return null;
+        }
+        if (Core.isOnUiThread()) {
+            return createTextureFromBitmap(
+                    uiRecordingContext,
+                    bitmap
+            );
+        }
+        if (Core.isOnRenderThread()) {
+            throw new IllegalStateException("Cannot be called from rendering thread");
+        }
+        FutureTask<Image> future = new FutureTask<>(() ->
+                createTextureFromBitmap(
+                        uiRecordingContext,
+                        bitmap
+                )
         );
+        if (!Core.getUiHandlerAsync().post(future)) {
+            return null;
+        }
+        boolean interrupted = false;
+        try {
+            for (;;) {
+                try {
+                    return future.get();
+                } catch (ExecutionException e) {
+                    var cause = e.getCause();
+                    throw IOUtil.sneakyThrow(cause != null ? cause : e);
+                } catch (InterruptedException e) {
+                    interrupted = true;
+                }
+            }
+        } finally {
+            if (interrupted)
+                Thread.currentThread().interrupt();
+        }
     }
 
     /**
@@ -125,11 +183,14 @@ public class Image implements AutoCloseable {
         try {
             //TODO we previously make all images Mipmapped, but Arc3D currently does not support
             // Mipmapping correctly
+
+            // because the return value is owned by client, budgeted = false to
+            // ensure Arc3D GPU ResourceCache work correctly
             nativeImage = icyllis.arc3d.granite.TextureUtils.makeFromPixmap(
                     recordingContext,
                     bitmap.getPixmap(),
                     /*mipmapped*/ false,
-                    /*budgeted*/ true,
+                    /*budgeted*/ false,
                     "ImageFromBitmap"
             );
         } finally {
@@ -142,6 +203,8 @@ public class Image implements AutoCloseable {
         return new Image(nativeImage); // move
     }
 
+    private static volatile BiFunction<String, String, Image> sLegacyFactory;
+
     /**
      * Creates a new image object representing the target resource image.
      * You should use a single image as the UI texture to avoid each icon creating its own image.
@@ -152,10 +215,40 @@ public class Image implements AutoCloseable {
      * @param namespace the application namespace
      * @param entry     the sub path to the resource
      * @return the image
+     * @deprecated use the new Resources API, {@link Resources#getImage(ResourceId, boolean)},
+     * {@link Resources#getDrawable(ResourceId, Resources.Theme)}
      */
+    @Deprecated
     @Nullable
     public static Image create(@NonNull String namespace, @NonNull String entry) {
-        return ImageStore.getInstance().getOrCreate(namespace, "textures/" + entry);
+        var factory = sLegacyFactory;
+        if (factory != null) {
+            var result = factory.apply(namespace, "textures/" + entry);
+            if (result != null) {
+                return result;
+            }
+        }
+        var asset = ModernUI.getInstance().getResources()
+                .getAsset(namespace + "/textures/" + entry);
+        if (asset != null) {
+            try (var bitmap = asset.isCompressed()
+                    ? BitmapFactory.decodeStream(asset.openStream())
+                    : BitmapFactory.decodeChannel(asset.openChannel())) {
+                return Image.createTextureFromBitmap(bitmap);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * @hide
+     * @hidden
+     */
+    @ApiStatus.Internal
+    public static void setLegacyFactory(BiFunction<String, String, /*nullable*/ Image> /*noexcept*/ legacyFactory) {
+        sLegacyFactory = legacyFactory;
     }
 
     /**
@@ -163,7 +256,10 @@ public class Image implements AutoCloseable {
      * and color space of this image.
      *
      * @return image info
+     * @hide
+     * @hidden
      */
+    @ApiStatus.Internal
     @NonNull
     public ImageInfo getInfo() {
         return mImage.getInfo();
@@ -216,6 +312,7 @@ public class Image implements AutoCloseable {
     }
 
     /**
+     * @hide
      * @hidden
      */
     @ApiStatus.Internal
@@ -231,7 +328,7 @@ public class Image implements AutoCloseable {
     /**
      * <p>Returns the density for this image.</p>
      *
-     * <p>The default density is {@link DisplayMetrics#DENSITY_DEFAULT}..</p>
+     * <p>The default density is {@link DisplayMetrics#DENSITY_DEFAULT}.</p>
      *
      * @return A scaling factor of the default density or {@link #DENSITY_NONE}
      * if the scaling factor is unknown.
@@ -255,6 +352,7 @@ public class Image implements AutoCloseable {
      * @see DisplayMetrics#DENSITY_DEFAULT
      * @see DisplayMetrics#densityDpi
      * @see #DENSITY_NONE
+     * @see #clone()
      */
     public void setDensity(int density) {
         mDensity = density;
@@ -293,10 +391,25 @@ public class Image implements AutoCloseable {
      * Returns whether the Image is completely opaque. Returns true if this
      * Image has no alpha channel, or is flagged to be known that all of its
      * pixels are opaque.
+     *
      * @return whether the image is opaque
      */
     public boolean isOpaque() {
         return mImage.isOpaque();
+    }
+
+    /**
+     * Indicates whether the pixels stored in this bitmap are stored in a premultiplied format.
+     * <p>
+     * When a pixel is premultiplied, the RGB components have already been multiplied by
+     * the alpha component. For instance, if the original color is a 50% translucent red
+     * {@code (1.0, 0.0, 0.0, 0.5)}, its premultiplied form is {@code (0.5, 0.0, 0.0, 0.5)}.
+     *
+     * @return true if the underlying pixels are premultiplied, false otherwise
+     * @since 3.13.0
+     */
+    public boolean isPremultiplied() {
+        return mImage.getAlphaType() == ColorInfo.AT_PREMUL;
     }
 
     /**
@@ -306,6 +419,24 @@ public class Image implements AutoCloseable {
     @Nullable
     public ColorSpace getColorSpace() {
         return mImage.getColorSpace();
+    }
+
+    /**
+     * Returns whether this image is backed by a CPU bitmap.
+     *
+     * @since 3.13.0
+     */
+    public boolean isRasterBacked() {
+        return mImage.isRasterBacked();
+    }
+
+    /**
+     * Returns whether this image is backed by a GPU texture.
+     *
+     * @since 3.13.0
+     */
+    public boolean isTextureBacked() {
+        return mImage.isTextureBacked();
     }
 
     /**
@@ -319,12 +450,20 @@ public class Image implements AutoCloseable {
      * <p>
      * When this object becomes phantom-reachable, the system will automatically
      * do this cleanup operation.
+     * <p>
+     * This method is thread safe and can be called multiple times.
      */
     @Override
     public void close() {
-        mImage = null;
-        // cleaner is thread safe
-        mCleanup.clean();
+        if (mImage == null) {
+            return;
+        }
+        // lock to ensure clone() thread-safe
+        synchronized (this) {
+            mImage = null;
+            // cleaner is thread safe, so no double check
+            mCleanup.clean();
+        }
     }
 
     /**
@@ -349,6 +488,16 @@ public class Image implements AutoCloseable {
      * Create a shallow copy of this image, this is equivalent to creating a
      * shared owner for the image. You may change the density or close the
      * returned Image without affecting the original Image.
+     * <p>
+     * This method is rarely used. If this image originates from the Resources API
+     * and you wish to manage its lifecycle yourself, set the <var>needNewInstance</var>
+     * of {@link Resources#getImage(ResourceId, boolean)}
+     * to true instead of calling this method. If you created the image yourself,
+     * this method is typically unnecessary unless you intend to pass it to another owner;
+     * in cases where both you and the new owner will close their respective objects,
+     * using this method ensures mutual independence and timely release.
+     * <p>
+     * This method is thread safe.
      *
      * @return a shallow copy of image
      * @throws IllegalStateException this image is already closed
@@ -358,23 +507,95 @@ public class Image implements AutoCloseable {
     public final Image clone() {
         icyllis.arc3d.sketch.Image image;
         try {
-            // this operation is not atomic
-            image = RefCnt.create(mImage);
+            synchronized (this) {
+                // this operation is not atomic
+                image = RefCnt.create(mImage);
+            }
         } finally {
+            // there may be lock elimination, this is still needed
             Reference.reachabilityFence(this);
         }
         if (image == null) {
             throw new IllegalStateException("Cannot clone a closed image!");
         }
+        // we disown this.mConstantState which is only used for the Resources API;
+        // it shouldn't be used in other scenarios.
         return new Image(image, mDensity);
     }
 
     /**
+     * Internally used by Resources API.
+     *
+     * @hide
+     * @hidden
+     */
+    @ApiStatus.Internal
+    public ConstantState getConstantState() {
+        // set mutual references
+        if (mConstantState == null) {
+            mConstantState = new ConstantState(this);
+        }
+        return mConstantState;
+    }
+
+    /**
+     * @hide
      * @hidden
      */
     @ApiStatus.Internal
     @RawPtr
     public icyllis.arc3d.sketch.Image getNativeImage() {
         return mImage;
+    }
+
+    /**
+     * Internally used by Resources API.
+     *
+     * @hide
+     * @hidden
+     */
+    @ApiStatus.Internal
+    public static final class ConstantState {
+
+        // CS -> Img0
+        // Img0 -> CS
+        // Img1 -> CS
+        // Img2 -> CS
+        // Drawable -> Img
+        // Cache -> weak CS
+        // Cache -> weak Drawable
+
+        private Image mImage; // Img0
+        private int mChangingConfigurations;
+
+        public ConstantState(Image image) {
+            mImage = image;
+        }
+
+        public void setChangingConfigurations(int changeConfigs) {
+            mChangingConfigurations = changeConfigs;
+        }
+
+        public int getChangingConfigurations() {
+            return mChangingConfigurations;
+        }
+
+        // the shared instance
+        public Image getImage() {
+            return mImage;
+        }
+
+        // a new instance that will not be closed when this.close() is called,
+        // and prevent this (and original mImage) from being GC.
+        public Image newImage() {
+            Image image = mImage.clone();
+            image.mConstantState = this;
+            return image;
+        }
+
+        public void close() {
+            mImage.close();
+            mImage = null;
+        }
     }
 }

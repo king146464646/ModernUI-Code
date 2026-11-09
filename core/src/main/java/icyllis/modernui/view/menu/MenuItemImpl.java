@@ -1,19 +1,19 @@
 /*
- * Modern UI.
- * Copyright (C) 2019-2022 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2019-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package icyllis.modernui.view.menu;
@@ -24,7 +24,6 @@ import icyllis.modernui.graphics.drawable.Drawable;
 import icyllis.modernui.util.ColorStateList;
 import icyllis.modernui.view.*;
 import icyllis.modernui.view.ContextMenu.ContextMenuInfo;
-import org.lwjgl.system.Platform;
 
 public final class MenuItemImpl implements MenuItem {
 
@@ -39,9 +38,9 @@ public final class MenuItemImpl implements MenuItem {
     private CharSequence mTitle;
     private CharSequence mTitleCondensed;
     private char mShortcutNumericChar;
-    private int mShortcutNumericModifiers = KeyEvent.META_CTRL_ON;
+    private int mShortcutNumericModifiers = KeyEvent.META_SHORTCUT_ON;
     private char mShortcutAlphabeticChar;
-    private int mShortcutAlphabeticModifiers = KeyEvent.META_CTRL_ON;
+    private int mShortcutAlphabeticModifiers = KeyEvent.META_SHORTCUT_ON;
 
     /**
      * The icon's drawable which is only created as needed
@@ -296,15 +295,16 @@ public final class MenuItemImpl implements MenuItem {
 
         final int modifiers =
                 mMenu.isQwertyMode() ? mShortcutAlphabeticModifiers : mShortcutNumericModifiers;
-        //TODO localisation and deal with SUPER key
-        if (Platform.get() == Platform.MACOSX) {
+        if (KeyEvent.IS_MACOS) {
+            appendModifier(sb, modifiers, KeyEvent.META_CONTROL_ON, "⌃");
             appendModifier(sb, modifiers, KeyEvent.META_ALT_ON, "⌥");
             appendModifier(sb, modifiers, KeyEvent.META_SHIFT_ON, "⇧");
-            appendModifier(sb, modifiers, KeyEvent.META_CTRL_ON, "⌘");
+            appendModifier(sb, modifiers, KeyEvent.META_SUPER_ON, "⌘");
         } else {
-            appendModifier(sb, modifiers, KeyEvent.META_CTRL_ON, "Ctrl+");
+            appendModifier(sb, modifiers, KeyEvent.META_CONTROL_ON, "Ctrl+");
             appendModifier(sb, modifiers, KeyEvent.META_ALT_ON, "Alt+");
             appendModifier(sb, modifiers, KeyEvent.META_SHIFT_ON, "Shift+");
+            appendModifier(sb, modifiers, KeyEvent.META_SUPER_ON, "Win+");
         }
 
         sb.append(Character.toUpperCase(shortcut));

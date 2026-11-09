@@ -1,38 +1,49 @@
 /*
- * Modern UI.
- * Copyright (C) 2019-2023 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2023-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package icyllis.modernui.graphics;
 
-import icyllis.arc3d.core.*;
+import icyllis.arc3d.core.ColorInfo;
+import icyllis.arc3d.core.ColorSpace;
+import icyllis.arc3d.core.ColorSpaces;
+import icyllis.arc3d.core.ImageInfo;
 import icyllis.modernui.annotation.NonNull;
 import icyllis.modernui.annotation.Nullable;
 import icyllis.modernui.core.Core;
 import org.jetbrains.annotations.ApiStatus;
-import org.lwjgl.stb.*;
+import org.lwjgl.stb.STBIEOFCallback;
+import org.lwjgl.stb.STBIIOCallbacks;
+import org.lwjgl.stb.STBIReadCallback;
+import org.lwjgl.stb.STBISkipCallback;
+import org.lwjgl.stb.STBImage;
 import org.lwjgl.system.MemoryStack;
-import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.system.jni.JNINativeInterface;
 
-import javax.imageio.ImageIO;
-import javax.imageio.stream.ImageInputStream;
-import java.io.*;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.Buffer;
 import java.nio.ByteBuffer;
-import java.nio.channels.*;
+import java.nio.channels.FileChannel;
+import java.nio.channels.ReadableByteChannel;
+import java.nio.channels.SeekableByteChannel;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Objects;
@@ -42,20 +53,59 @@ import static org.lwjgl.system.MemoryUtil.*;
 
 /**
  * Creates {@link Bitmap Bitmaps} from encoded data.
+ * <p>
+ * This class provides static methods for decoding encoded image data from various
+ * sources into pixel maps (i.e. {@link Bitmap Bitmaps}).
+ * <p>
+ * The following image formats are supported:
+ * <table border="1">
+ * <caption>Supported Formats</caption>
+ * <tr><th>Format Name</th><th>MIME Type</th><th>Typical Extensions</th></tr>
+ * <tr><td>PNG</td><td>{@code image/png}</td><td>.png</td></tr>
+ * <tr><td>GIF</td><td>{@code image/gif}</td><td>.gif</td></tr>
+ * <tr><td>JPEG</td><td>{@code image/jpeg}</td><td>.jpg, .jpeg, .jfif</td></tr>
+ * <tr><td>TIFF</td><td>{@code image/tiff}</td><td>.tiff, .tif</td></tr>
+ * <tr><td>Radiance HDR</td><td>{@code image/vnd.radiance}</td><td>.hdr</td></tr>
+ * <tr><td>Netpbm PGM</td><td>{@code image/x-portable-graymap}</td><td>.pgm</td></tr>
+ * <tr><td>Netpbm PPM</td><td>{@code image/x-portable-pixmap}</td><td>.ppm, .pnm</td></tr>
+ * </table>
+ * </p>
+ * <p>
+ * Decoding is supported from the following input sources:
+ * <ul>
+ * <li>{@link File}</li>
+ * <li>{@link Path}</li>
+ * <li>{@link InputStream}</li>
+ * <li>{@link ReadableByteChannel}</li>
+ * <li>{@code byte[]}</li>
+ * <li>{@link ByteBuffer}</li>
+ * </ul>
+ * </p>
+ * <p>
+ * For each input source, a corresponding {@code decode*Info} method is provided.
+ * These methods parse only the metadata (dimensions, format, and MIME type)
+ * without decoding or allocating memory for the underlying pixel data.
+ * </p>
+ * <p>
+ * All methods can be called from any thread, but it is recommended to call them
+ * from a worker thread.
+ * </p>
  *
  * @since 3.7
  */
 public final class BitmapFactory {
 
+    //TODO get rid of stb_image and use ModernUI codec to support color management, PNGv3, HDR image...
+
     /**
      * Collects the options for the decoder and additional outputs from the decoder.
      *
      * <p>Unlike Android (with its Skia graphics engine), it is not necessary to
-     * pre-multiply alpha of image data in Modern UI framework. We allow images
+     * pre-multiply alpha of image data in ModernUI. We allow images
      * to be directly drawn by the view system or through a {@link Canvas} either
      * pre-multiplied or non-pre-multiplied. Although pre-multiplied alpha can
      * help draw-time blending, but it results in precision loss since images
-     * are 8-bit per channel in memory. Instead, Modern UI will pre-multiply alpha
+     * are 8-bit per channel in memory. Instead, ModernUI will pre-multiply alpha
      * in the shading pipeline.</p>
      */
     public static class Options {
@@ -88,24 +138,19 @@ public final class BitmapFactory {
          * color space. If it is null, or the request cannot be met,
          * the decoder will pick either the color space embedded in the image
          * or the color space best suited for the requested image format
-         * (for instance {@link ColorSpace.Named#SRGB sRGB} for
-         * {@link Bitmap.Format#RGBA_8888} format.</p>
-         *
-         * <p class="note">Only {@link ColorSpace.Model#RGB} color spaces are
-         * currently supported. An <code>IllegalArgumentException</code> will
-         * be thrown by the decode methods when setting a non-RGB color space
-         * such as {@link ColorSpace.Named#CIE_LAB Lab}.</p>
-         *
-         * <p class="note">The specified color space's transfer function must be
-         * an {@link ColorSpace.Rgb.TransferParameters ICC parametric curve}. An
-         * <code>IllegalArgumentException</code> will be thrown by the decode methods
-         * if calling {@link ColorSpace.Rgb#getTransferParameters()} on the
-         * specified color space returns null.</p>
+         * (for instance {@link ColorSpaces#SRGB sRGB} for
+         * {@link Bitmap.Format#RGBA_8888} format).</p>
          *
          * <p>After decode, the bitmap's color space is stored in
          * {@link #outColorSpace}.</p>
          */
         public ColorSpace inPreferredColorSpace = null;
+
+        /**
+         * Temporary storage used for decoding from a stream.
+         * The minimum size is 128; 8192 is recommended.
+         */
+        public byte[] inTempStorage = null;
 
         /**
          * The width of the bitmap. If there is an error, it is undefined.
@@ -122,6 +167,21 @@ public final class BitmapFactory {
          * If not known, or there is an error, it is undefined.
          * <p>
          * Set only when {@link #inDecodeMimeType} is true.
+         * <p>
+         * Supported MIME types include:
+         * <ul>
+         * <li>{@code "image/png"} - Portable Network Graphics</li>
+         * <li>{@code "image/gif"} - Graphics Interchange Format</li>
+         * <li>{@code "image/bmp"} - Windows Bitmap</li>
+         * <li>{@code "image/jpeg"} - Joint Photographic Experts Group</li>
+         * <li>{@code "image/tiff"} - Tagged Image File Format</li>
+         * <li>{@code "image/vnd.radiance"} - Radiance HDR</li>
+         * <li>{@code "image/vnd.adobe.photoshop"} - Adobe Photoshop Document (PSD)</li>
+         * <li>{@code "image/x-tga"} - Truevision TGA (Targa)</li>
+         * <li>{@code "image/x-softimage-pic"} - Softimage PIC</li>
+         * <li>{@code "image/x-portable-graymap"} - Netpbm Grayscale (PGM)</li>
+         * <li>{@code "image/x-portable-pixmap"} - Netpbm Color (PPM)</li>
+         * </ul>
          */
         public String outMimeType;
 
@@ -137,25 +197,35 @@ public final class BitmapFactory {
          * is encoded with. If not known, or there is an error, it is undefined.
          */
         public ColorSpace outColorSpace;
-    }
 
-    private static void validate(Options opts) {
-        if (opts == null) return;
-
-        if (opts.inPreferredColorSpace != null) {
-            if (!(opts.inPreferredColorSpace instanceof ColorSpace.Rgb rgbColorSpace)) {
-                throw new IllegalArgumentException("The destination color space must use the " +
-                        "RGB color model");
-            }
-            if (rgbColorSpace.getTransferParameters() == null) {
-                throw new IllegalArgumentException("The destination color space must use an " +
-                        "ICC parametric transfer function");
-            }
+        /**
+         * For debug printing.
+         *
+         * @since 3.13
+         */
+        @Override
+        public String toString() {
+            //noinspection ImplicitArrayToString
+            return "Bitmap.Options{" +
+                    "inImmutable=" + inImmutable +
+                    ", inDecodeMimeType=" + inDecodeMimeType +
+                    ", inPreferredFormat=" + inPreferredFormat +
+                    ", inPreferredColorSpace=" + inPreferredColorSpace +
+                    ", inTempStorage=" + inTempStorage +
+                    ", outWidth=" + outWidth +
+                    ", outHeight=" + outHeight +
+                    ", outMimeType='" + outMimeType + '\'' +
+                    ", outFormat=" + outFormat +
+                    ", outColorSpace=" + outColorSpace +
+                    '}';
         }
     }
 
+    private static void validate(Options opts) {
+    }
+
     /**
-     * Decode a file path into a bitmap.
+     * Decode a file path into an immutable bitmap.
      * <p>
      * If the file cannot be decoded into a bitmap, the method throws {@link IOException}
      * on the halfway.
@@ -173,10 +243,7 @@ public final class BitmapFactory {
      * Decode a file path into a bitmap.
      * <p>
      * If the file cannot be decoded into a bitmap, the method throws {@link IOException}
-     * on the halfway. If the specified color space is not {@link ColorSpace.Model#RGB RGB},
-     * or if the specified color space's transfer function is not an
-     * {@link ColorSpace.Rgb.TransferParameters ICC parametric curve}, the method throws
-     * {@link IllegalArgumentException}.
+     * on the halfway.
      *
      * @param file the file to be decoded
      * @param opts the decoder options
@@ -188,9 +255,6 @@ public final class BitmapFactory {
     public static Bitmap decodeFile(@NonNull File file,
                                     @Nullable Options opts) throws IOException {
         validate(opts);
-        if (opts != null && opts.inDecodeMimeType) {
-            decodeMimeType(opts, file);
-        }
         final Bitmap bm;
         try (final var stream = new FileInputStream(file)) {
             bm = decodeSeekableChannel(stream.getChannel(), opts, false);
@@ -211,16 +275,13 @@ public final class BitmapFactory {
      */
     public static void decodeFileInfo(@NonNull File file,
                                       @NonNull Options opts) throws IOException {
-        if (opts.inDecodeMimeType) {
-            decodeMimeType(opts, file);
-        }
         try (final var stream = new FileInputStream(file)) {
             decodeSeekableChannel(stream.getChannel(), opts, true);
         }
     }
 
     /**
-     * Decode a file path into a bitmap.
+     * Decode a file path into an immutable bitmap.
      * <p>
      * If the file cannot be decoded into a bitmap, the method throws {@link IOException}
      * on the halfway.
@@ -238,10 +299,7 @@ public final class BitmapFactory {
      * Decode a file path into a bitmap.
      * <p>
      * If the file cannot be decoded into a bitmap, the method throws {@link IOException}
-     * on the halfway. If the specified color space is not {@link ColorSpace.Model#RGB RGB},
-     * or if the specified color space's transfer function is not an
-     * {@link ColorSpace.Rgb.TransferParameters ICC parametric curve}, the method throws
-     * {@link IllegalArgumentException}.
+     * on the halfway.
      *
      * @param path the file to be decoded
      * @param opts the decoder options
@@ -253,14 +311,16 @@ public final class BitmapFactory {
     public static Bitmap decodePath(@NonNull Path path,
                                     @Nullable Options opts) throws IOException {
         validate(opts);
-        if (opts != null && opts.inDecodeMimeType) {
-            decodeMimeType(opts, path.toFile());
+        try {
+            // If the path represents a file on the OS default file system, then this is faster
+            File file = path.toFile();
+            return decodeFile(file, opts);
+        } catch (RuntimeException ignored) {
         }
         final Bitmap bm;
-        try (final var channel = FileChannel.open(path, StandardOpenOption.READ)) {
-            bm = decodeSeekableChannel(channel, opts, false);
+        try (final var stream = Files.newInputStream(path, StandardOpenOption.READ)) {
+            bm = decodeStream(stream, opts);
         }
-        assert bm != null;
         return bm;
     }
 
@@ -276,18 +336,22 @@ public final class BitmapFactory {
      */
     public static void decodePathInfo(@NonNull Path path,
                                       @NonNull Options opts) throws IOException {
-        if (opts.inDecodeMimeType) {
-            decodeMimeType(opts, path.toFile());
+        try {
+            // If the path represents a file on the OS default file system, then this is faster
+            File file = path.toFile();
+            decodeFileInfo(file, opts);
+            return;
+        } catch (RuntimeException ignored) {
         }
-        try (final var channel = FileChannel.open(path, StandardOpenOption.READ)) {
-            decodeSeekableChannel(channel, opts, true);
+        try (final var stream = Files.newInputStream(path, StandardOpenOption.READ)) {
+            decodeStreamInfo(stream, opts);
         }
     }
 
     /**
-     * Decode an input stream into a bitmap.
+     * Decode an input stream into an immutable bitmap.
      * <p>
-     * The stream's position will be at the end of the encoded data. This method
+     * The stream's position will be undefined after being called. This method
      * <em>does not</em> closed the given stream after read operation has completed.
      * <p>
      * If the stream cannot be decoded into a bitmap, the method throws {@link IOException}
@@ -305,14 +369,11 @@ public final class BitmapFactory {
     /**
      * Decode an input stream into a bitmap.
      * <p>
-     * The stream's position will be at the end of the encoded data. This method
+     * The stream's position will be undefined after being called. This method
      * <em>does not</em> closed the given stream after read operation has completed.
      * <p>
      * If the stream cannot be decoded into a bitmap, the method throws {@link IOException}
-     * on the halfway. If the specified color space is not {@link ColorSpace.Model#RGB RGB},
-     * or if the specified color space's transfer function is not an
-     * {@link ColorSpace.Rgb.TransferParameters ICC parametric curve}, the method throws
-     * {@link IllegalArgumentException}.
+     * on the halfway.
      *
      * @param stream the input stream to be decoded
      * @param opts   the decoder options
@@ -327,20 +388,9 @@ public final class BitmapFactory {
         final Bitmap bm;
         if (stream.getClass() == FileInputStream.class) {
             FileChannel ch = ((FileInputStream) stream).getChannel();
-            if (opts != null && opts.inDecodeMimeType) {
-                long pos = ch.position();
-                decodeMimeType(opts, stream); // no need to close
-                ch.position(pos);
-            }
             bm = decodeSeekableChannel(ch, opts, false);
         } else {
-            ByteBuffer p = null;
-            try {
-                p = Core.readIntoNativeBuffer(stream);
-                bm = decodeBuffer(p.rewind(), opts);
-            } finally {
-                MemoryUtil.memFree(p);
-            }
+            bm = decodeSeekableStream(stream, opts, false);
         }
         assert bm != null;
         return bm;
@@ -360,25 +410,14 @@ public final class BitmapFactory {
                                         @NonNull Options opts) throws IOException {
         if (stream.getClass() == FileInputStream.class) {
             FileChannel ch = ((FileInputStream) stream).getChannel();
-            if (opts.inDecodeMimeType) {
-                long pos = ch.position();
-                decodeMimeType(opts, stream); // no need to close
-                ch.position(pos);
-            }
             decodeSeekableChannel(ch, opts, true);
         } else {
-            ByteBuffer p = null;
-            try {
-                p = Core.readIntoNativeBuffer(stream);
-                decodeBufferInfo(p.rewind(), opts);
-            } finally {
-                MemoryUtil.memFree(p);
-            }
+            decodeSeekableStream(stream, opts, true);
         }
     }
 
     /**
-     * Decode a readable channel into a bitmap.
+     * Decode a readable channel into an immutable bitmap.
      * <p>
      * The channel's position will be at the end of the encoded data. This method
      * <em>does not</em> closed the given channel after read operation has completed.
@@ -402,10 +441,7 @@ public final class BitmapFactory {
      * <em>does not</em> closed the given channel after read operation has completed.
      * <p>
      * If the channel cannot be decoded into a bitmap, the method throws {@link IOException}
-     * on the halfway. If the specified color space is not {@link ColorSpace.Model#RGB RGB},
-     * or if the specified color space's transfer function is not an
-     * {@link ColorSpace.Rgb.TransferParameters ICC parametric curve}, the method throws
-     * {@link IllegalArgumentException}.
+     * on the halfway.
      *
      * @param channel the readable channel to be decoded
      * @param opts    the decoder options
@@ -419,19 +455,14 @@ public final class BitmapFactory {
         validate(opts);
         final Bitmap bm;
         if (channel instanceof SeekableByteChannel ch) {
-            if (opts != null && opts.inDecodeMimeType) {
-                long pos = ch.position();
-                decodeMimeType(opts, Channels.newInputStream(channel)); // no need to close
-                ch.position(pos);
-            }
             bm = decodeSeekableChannel(ch, opts, false);
         } else {
             ByteBuffer p = null;
             try {
                 p = Core.readIntoNativeBuffer(channel);
-                bm = decodeBuffer(p.rewind(), opts);
+                bm = decodeBuffer(p.flip(), opts);
             } finally {
-                MemoryUtil.memFree(p);
+                memFree((Buffer) p);
             }
         }
         assert bm != null;
@@ -451,19 +482,14 @@ public final class BitmapFactory {
     public static void decodeChannelInfo(@NonNull ReadableByteChannel channel,
                                          @NonNull Options opts) throws IOException {
         if (channel instanceof SeekableByteChannel ch) {
-            if (opts.inDecodeMimeType) {
-                long pos = ch.position();
-                decodeMimeType(opts, Channels.newInputStream(channel)); // no need to close
-                ch.position(pos);
-            }
             decodeSeekableChannel(ch, opts, true);
         } else {
             ByteBuffer p = null;
             try {
                 p = Core.readIntoNativeBuffer(channel);
-                decodeBufferInfo(p.rewind(), opts);
+                decodeBufferInfo(p.flip(), opts);
             } finally {
-                MemoryUtil.memFree(p);
+                memFree((Buffer) p);
             }
         }
     }
@@ -486,13 +512,10 @@ public final class BitmapFactory {
     }
 
     /**
-     * Decode an immutable bitmap from the specified byte array.
+     * Decode a bitmap from the specified byte array.
      * <p>
      * If the data cannot be decoded into a bitmap, the method throws {@link IOException}
-     * on the halfway. If the specified color space is not {@link ColorSpace.Model#RGB RGB},
-     * or if the specified color space's transfer function is not an
-     * {@link ColorSpace.Rgb.TransferParameters ICC parametric curve}, the method throws
-     * {@link IllegalArgumentException}.
+     * on the halfway.
      *
      * @param data   byte array of compressed image data
      * @param offset offset into image data for where the decoder should begin parsing
@@ -509,64 +532,74 @@ public final class BitmapFactory {
             throw new ArrayIndexOutOfBoundsException();
         }
         validate(opts);
-        if (opts != null && opts.inDecodeMimeType) {
-            decodeMimeType(opts, new ByteArrayInputStream(data, offset, length));  // no need to close (nop)
-        }
-        ByteBuffer p = null;
-        final Bitmap bm;
-        try {
-            p = MemoryUtil.memAlloc(length);
-            bm = decodeBuffer0(p
-                    .put(data, offset, length)
-                    .rewind(), opts);
-        } finally {
-            MemoryUtil.memFree(p);
-        }
+        final Bitmap bm = decodeHeapBuffer(data, offset, length,
+                opts, false);
+        assert bm != null;
         return bm;
     }
 
-    @ApiStatus.Internal
+    /**
+     * Query the bitmap info from the specified byte array, without allocating the
+     * memory for its pixels.
+     * <p>
+     * If the data cannot be decoded into a bitmap, the method throws {@link IOException}
+     * on the halfway.
+     *
+     * @param data   byte array of compressed image data
+     * @param offset offset into image data for where the decoder should begin parsing
+     * @param length the number of bytes, beginning at offset, to parse
+     * @param opts   the out values
+     * @throws IOException the data cannot be decoded into a bitmap
+     * @since 3.13
+     */
+    public static void decodeByteArrayInfo(byte[] data, int offset, int length,
+                                           @NonNull Options opts) throws IOException {
+        if ((offset | length) < 0 || data.length < offset + length) {
+            throw new ArrayIndexOutOfBoundsException();
+        }
+        //noinspection resource
+        final Bitmap bm = decodeHeapBuffer(data, offset, length, opts, true);
+        assert bm == null;
+    }
+
+    /**
+     * Decode a bitmap from the specified byte buffer. The buffer may be a
+     * heap buffer or a direct buffer. The decoder starts from the current
+     * {@link ByteBuffer#position()} and read {@link ByteBuffer#remaining()} bytes at most.
+     * And the buffer's position will remain unchanged after the call.
+     * <p>
+     * If the buffer cannot be decoded into a bitmap, the method throws {@link IOException}
+     * on the halfway.
+     *
+     * @param buffer byte buffer of compressed image data
+     * @param opts   the decoder options
+     * @return the decoded bitmap
+     * @throws IllegalArgumentException the options are invalid
+     * @throws IOException              the data cannot be decoded into a bitmap
+     * @since 3.13
+     */
     @NonNull
     public static Bitmap decodeBuffer(@NonNull ByteBuffer buffer,
                                       @Nullable Options opts) throws IOException {
+        if (buffer.hasArray()) {
+            return decodeByteArray(buffer.array(),
+                    buffer.arrayOffset() + buffer.position(),
+                    buffer.remaining(), opts);
+        }
         validate(opts);
-        assert buffer.isDirect() && !buffer.isReadOnly();
+        if (!buffer.isDirect()) {
+            throw new IOException("No data provided");
+        }
         if (opts != null && opts.inDecodeMimeType) {
-            // scan header for setting MIME type, 96 bytes is enough
-            byte[] seek = new byte[Math.min(buffer.limit(), 96)];
-            buffer.get(0, seek, 0, seek.length);
-            decodeMimeType(opts, new ByteArrayInputStream(seek)); // no need to close (nop)
+            // scan header for setting MIME type
+            decodeMimeType(opts, buffer);
         }
-        return decodeBuffer0(buffer, opts);
-    }
-
-    @ApiStatus.Internal
-    public static void decodeBufferInfo(@NonNull ByteBuffer buffer,
-                                        @NonNull Options opts) throws IOException {
-        assert buffer.isDirect() && !buffer.isReadOnly();
-        final long buf = memAddress(buffer);
-        final int len = buffer.remaining();
-        if (opts.inDecodeMimeType) {
-            // scan header for setting MIME type, 96 bytes is enough
-            byte[] seek = new byte[Math.min(len, 96)];
-            buffer.get(buffer.position(), seek, 0, seek.length);
-            decodeMimeType(opts, new ByteArrayInputStream(seek)); // no need to close (nop)
-        }
-        final boolean isU16, isHDR;
-        isHDR = STBImage.nstbi_is_hdr_from_memory(buf, len) != 0;
-        isU16 = !isHDR && STBImage.nstbi_is_16_bit_from_memory(buf, len) != 0;
-        decodeInfo0(NULL, NULL, buf, len, opts, isU16, isHDR);
-    }
-
-    @NonNull
-    private static Bitmap decodeBuffer0(@NonNull ByteBuffer buffer,
-                                        @Nullable Options opts) throws IOException {
         final long buf = memAddress(buffer);
         final int len = buffer.remaining();
         final boolean isU16, isHDR;
         if (opts != null && opts.inPreferredFormat != null) {
             isU16 = opts.inPreferredFormat.isChannelU16();
-            isHDR = opts.inPreferredFormat.isChannelHDR();
+            isHDR = opts.inPreferredFormat == Bitmap.Format.RGBA_F32;
         } else {
             isHDR = STBImage.nstbi_is_hdr_from_memory(buf, len) != 0;
             isU16 = !isHDR && STBImage.nstbi_is_16_bit_from_memory(buf, len) != 0;
@@ -574,67 +607,204 @@ public final class BitmapFactory {
         return decode0(NULL, NULL, buf, len, opts, isU16, isHDR);
     }
 
-    static class SeekableContext {
+    /**
+     * Query the bitmap info from the specified byte buffer, without allocating the
+     * memory for its pixels. The buffer may be a
+     * heap buffer or a direct buffer. The decoder starts from the current
+     * {@link ByteBuffer#position()} and read {@link ByteBuffer#remaining()} bytes at most.
+     * And the buffer's position will remain unchanged after the call.
+     * <p>
+     * If the data cannot be decoded into a bitmap, the method throws {@link IOException}
+     * on the halfway.
+     *
+     * @param buffer byte buffer of compressed image data
+     * @param opts   the out values
+     * @throws IOException the data cannot be decoded into a bitmap
+     * @since 3.13
+     */
+    public static void decodeBufferInfo(@NonNull ByteBuffer buffer,
+                                        @NonNull Options opts) throws IOException {
+        if (buffer.hasArray()) {
+            decodeByteArrayInfo(buffer.array(),
+                    buffer.arrayOffset() + buffer.position(),
+                    buffer.remaining(), opts);
+            return;
+        }
+        if (!buffer.isDirect()) {
+            throw new IOException("No data provided");
+        }
+        final long buf = memAddress(buffer);
+        final int len = buffer.remaining();
+        if (opts.inDecodeMimeType) {
+            // scan header for setting MIME type
+            decodeMimeType(opts, buffer);
+        }
+        final boolean isU16, isHDR;
+        isHDR = STBImage.nstbi_is_hdr_from_memory(buf, len) != 0;
+        isU16 = !isHDR && STBImage.nstbi_is_16_bit_from_memory(buf, len) != 0;
+        decodeInfo0(NULL, NULL, buf, len, opts, isU16, isHDR);
+    }
+
+    static final class SeekableContext {
+        static final int BUFFER_SIZE = 8192; // jdk convention
+
         boolean eof = false;
         IOException ioe = null;
+
         final SeekableByteChannel channel;
+
+        final InputStream stream;
+        final byte[] buffer;
+        int pos, end;
 
         SeekableContext(SeekableByteChannel channel) {
             this.channel = channel;
+            stream = null;
+            buffer = null;
+        }
+
+        SeekableContext(InputStream stream, byte[] buffer) {
+            this.stream = stream;
+            this.buffer = buffer;
+            channel = null;
         }
     }
 
-    //TODO provide a method to free this, or just untrack?
+    static final class ReadCallback extends STBIReadCallback {
+        @Override
+        public int invoke(long user, long data, int size) {
+            SeekableContext ctx = memGlobalRefToObject(user);
+            if (ctx.eof) {
+                return 0;
+            }
+            int read = 0;
+            // File channel can read directly into the native buffer without
+            // going through the heap buffer. If it's not a file channel, then
+            // this typically performs a copy from the heap to native.
+            // Additionally, we require the channel to be in blocking mode.
+            ByteBuffer dst = STBIReadCallback.getData(data, size);
+            if (ctx.channel != null) {
+                while (dst.hasRemaining()) {
+                    try {
+                        int n = ctx.channel.read(dst);
+                        if (n <= 0) {
+                            ctx.eof = true;
+                            break;
+                        }
+                        read += n;
+                    } catch (IOException e) {
+                        ctx.ioe = e;
+                        ctx.eof = true;
+                        break;
+                    }
+                }
+            } else {
+                assert ctx.buffer != null;
+                while (read < size) {
+                    int request = size - read;
+                    // If we have pushback buffer, consume it first
+                    if (ctx.pos < ctx.end) {
+                        request = Math.min(request, ctx.end - ctx.pos);
+                        dst.put(ctx.buffer, ctx.pos, request);
+                        ctx.pos += request;
+                        read += request;
+                        continue;
+                    }
+                    if (ctx.stream == null) {
+                        ctx.eof = true;
+                        break;
+                    }
+                    // Otherwise read from stream
+                    try {
+                        int n = ctx.stream.read(ctx.buffer, 0,
+                                Math.min(ctx.buffer.length, SeekableContext.BUFFER_SIZE));
+                        if (n <= 0) {
+                            ctx.eof = true;
+                            break;
+                        }
+                        request = Math.min(request, n);
+                        dst.put(ctx.buffer, 0, request);
+                        ctx.pos = request;
+                        ctx.end = n;
+                        read += request;
+                    } catch (IOException e) {
+                        ctx.ioe = e;
+                        ctx.eof = true;
+                        break;
+                    }
+                }
+            }
+            return read;
+        }
+    }
+
+    // After reviewing the stb_image.h, I found that its skip function never
+    // takes a negative n, therefore, any InputStream can work with it.
+    static final class SkipCallback extends STBISkipCallback {
+        @Override
+        public void invoke(long user, int n) {
+            SeekableContext ctx = memGlobalRefToObject(user);
+            if (ctx.eof) {
+                return;
+            }
+            if (ctx.channel != null) {
+                try {
+                    ctx.channel.position(ctx.channel.position() + n);
+                } catch (IOException e) {
+                    ctx.ioe = e;
+                    ctx.eof = true;
+                }
+            } else {
+                assert ctx.buffer != null;
+                if (n <= 0) {
+                    // n <= 0 should not happen, but we allow it in release build
+                    if (ctx.pos >= n) {
+                        ctx.pos -= n;
+                    } else {
+                        ctx.eof = true;
+                    }
+                    return;
+                }
+                if (ctx.pos < ctx.end) {
+                    int request = Math.min(n, ctx.end - ctx.pos);
+                    ctx.pos += request;
+                    n -= request;
+                }
+                if (n > 0) {
+                    if (ctx.stream == null) {
+                        ctx.eof = true;
+                        return;
+                    }
+                    ctx.pos = ctx.end = 0;
+                    try {
+                        ctx.stream.skipNBytes(n);
+                    } catch (IOException e) {
+                        ctx.ioe = e;
+                        ctx.eof = true;
+                    }
+                }
+            }
+        }
+    }
+
+    static final class EOFCallback extends STBIEOFCallback {
+        @Override
+        public int invoke(long user) {
+            SeekableContext ctx = memGlobalRefToObject(user);
+            return ctx.eof ? 1 : 0;
+        }
+    }
+
+    //TODO we should untrack this global memory to help with org.lwjgl.util.DebugAllocator=true
     private static volatile STBIIOCallbacks g_io_callbacks;
 
     private static long get_io_callbacks() {
         if (g_io_callbacks == null) {
             synchronized (BitmapFactory.class) {
                 if (g_io_callbacks == null) {
-                    final var readcb = new STBIReadCallback() {
-                        @Override
-                        public int invoke(long user, long data, int size) {
-                            SeekableContext ctx = memGlobalRefToObject(user);
-                            if (ctx.eof) {
-                                return 0;
-                            }
-                            int n;
-                            try {
-                                n = ctx.channel.read(STBIReadCallback.getData(data, size));
-                            } catch (IOException e) {
-                                ctx.ioe = e;
-                                ctx.eof = true;
-                                return 0;
-                            }
-                            if (n < 0) {
-                                ctx.eof = true;
-                                return 0;
-                            }
-                            return n;
-                        }
-                    };
-                    final var skipcb = new STBISkipCallback() {
-                        @Override
-                        public void invoke(long user, int n) {
-                            SeekableContext ctx = memGlobalRefToObject(user);
-                            if (ctx.eof) {
-                                return;
-                            }
-                            try {
-                                ctx.channel.position(ctx.channel.position() + n);
-                            } catch (IOException e) {
-                                ctx.ioe = e;
-                                ctx.eof = true;
-                            }
-                        }
-                    };
-                    final var eofcb = new STBIEOFCallback() {
-                        @Override
-                        public int invoke(long user) {
-                            SeekableContext ctx = memGlobalRefToObject(user);
-                            return ctx.eof ? 1 : 0;
-                        }
-                    };
+                    final var readcb = new ReadCallback();
+                    final var skipcb = new SkipCallback();
+                    final var eofcb = new EOFCallback();
                     g_io_callbacks = STBIIOCallbacks.malloc()
                             .set(readcb, skipcb, eofcb);
                 }
@@ -644,8 +814,114 @@ public final class BitmapFactory {
     }
 
     @Nullable
+    private static Bitmap decodeHeapBuffer(byte[] buffer, int offset, int length,
+                                           @Nullable Options opts, boolean info) throws IOException {
+        if (opts != null && opts.inDecodeMimeType) {
+            decodeMimeType(opts, ByteBuffer.wrap(buffer, offset, length));
+        }
+
+        var context = new SeekableContext(null, buffer);
+        context.pos = offset;
+        context.end = offset + length;
+
+        final boolean isU16, isHDR;
+        if (!info && opts != null && opts.inPreferredFormat != null) {
+            isU16 = opts.inPreferredFormat.isChannelU16();
+            isHDR = opts.inPreferredFormat == Bitmap.Format.RGBA_F32;
+        } else {
+            try (MemoryStack stack = MemoryStack.stackPush()) {
+                int n = Math.min(length, 128);
+                ByteBuffer p = stack.malloc(n);
+                p.put(0, buffer, offset, n);
+                isHDR = STBImage.stbi_is_hdr_from_memory(p);
+                if (isHDR) {
+                    isU16 = false;
+                } else {
+                    isU16 = STBImage.stbi_is_16_bit_from_memory(p);
+                }
+            }
+        }
+
+        var callbacks = get_io_callbacks();
+        var user = JNINativeInterface.NewGlobalRef(context);
+        try {
+            if (info) {
+                assert opts != null;
+                decodeInfo0(callbacks, user, NULL, 0, opts, isU16, isHDR);
+                return null;
+            }
+            return decode0(callbacks, user, NULL, 0, opts, isU16, isHDR);
+        } finally {
+            JNINativeInterface.DeleteGlobalRef(user);
+        }
+    }
+
+    @Nullable
+    private static Bitmap decodeSeekableStream(@NonNull InputStream stream,
+                                               @Nullable Options opts, boolean info) throws IOException {
+        byte[] buffer = opts != null && opts.inTempStorage != null
+                ? opts.inTempStorage : new byte[SeekableContext.BUFFER_SIZE];
+
+        int n = stream.readNBytes(buffer, 0, Math.min(buffer.length, 128));
+        if (n <= 0) {
+            throw new IOException("No bytes read, or buffer is too small");
+        }
+
+        if (opts != null && opts.inDecodeMimeType) {
+            decodeMimeType(opts, ByteBuffer.wrap(buffer, 0, n));
+        }
+
+        var context = new SeekableContext(stream, buffer);
+        // rewind
+        context.pos = 0;
+        context.end = n;
+
+        final boolean isU16, isHDR;
+        if (!info && opts != null && opts.inPreferredFormat != null) {
+            isU16 = opts.inPreferredFormat.isChannelU16();
+            isHDR = opts.inPreferredFormat == Bitmap.Format.RGBA_F32;
+        } else {
+            try (MemoryStack stack = MemoryStack.stackPush()) {
+                ByteBuffer p = stack.malloc(n);
+                p.put(0, buffer, 0, n);
+                isHDR = STBImage.stbi_is_hdr_from_memory(p);
+                if (isHDR) {
+                    isU16 = false;
+                } else {
+                    isU16 = STBImage.stbi_is_16_bit_from_memory(p);
+                }
+            }
+        }
+
+        var callbacks = get_io_callbacks();
+        var user = JNINativeInterface.NewGlobalRef(context);
+        try {
+            if (info) {
+                assert opts != null;
+                decodeInfo0(callbacks, user, NULL, 0, opts, isU16, isHDR);
+                return null;
+            }
+            return decode0(callbacks, user, NULL, 0, opts, isU16, isHDR);
+        } finally {
+            JNINativeInterface.DeleteGlobalRef(user);
+        }
+    }
+
+    @Nullable
     private static Bitmap decodeSeekableChannel(@NonNull SeekableByteChannel channel,
                                                 @Nullable Options opts, boolean info) throws IOException {
+        if (opts != null && opts.inDecodeMimeType) {
+            long start = channel.position();
+            try (MemoryStack stack = MemoryStack.stackPush()) {
+                ByteBuffer seek = stack.malloc(128);
+                //noinspection StatementWithEmptyBody
+                while (channel.read(seek) > 0)
+                    ;
+                decodeMimeType(opts, seek.flip());
+            }
+            channel.position(start);
+        }
+
         var callbacks = get_io_callbacks();
         var context = new SeekableContext(channel);
         var user = JNINativeInterface.NewGlobalRef(context);
@@ -653,7 +929,7 @@ public final class BitmapFactory {
             final boolean isU16, isHDR;
             if (!info && opts != null && opts.inPreferredFormat != null) {
                 isU16 = opts.inPreferredFormat.isChannelU16();
-                isHDR = opts.inPreferredFormat.isChannelHDR();
+                isHDR = opts.inPreferredFormat == Bitmap.Format.RGBA_F32;
             } else {
                 final long start = channel.position();
                 isHDR = STBImage.nstbi_is_hdr_from_callbacks(callbacks, user) != 0;
@@ -692,7 +968,7 @@ public final class BitmapFactory {
             final long address;
             final int requiredChannels = requiredFormat != null
                     ? requiredFormat.getChannels()
-                    : STBImage.STBI_default;
+                    : isHDR ? 4 : STBImage.STBI_default;
             if (callbacks != NULL) {
                 if (isHDR) {
                     address = STBImage.nstbi_loadf_from_callbacks(callbacks, context,
@@ -731,10 +1007,10 @@ public final class BitmapFactory {
             // determine the final format we got
             Bitmap.Format format = requiredFormat != null
                     ? requiredFormat
-                    : Bitmap.Format.get(channels_in_file, isU16, isHDR);
+                    : chooseFormat(channels_in_file, isU16, isHDR);
             ColorSpace cs = isHDR
-                    ? ColorSpace.get(ColorSpace.Named.LINEAR_EXTENDED_SRGB)
-                    : ColorSpace.get(ColorSpace.Named.SRGB);
+                    ? ColorSpaces.LINEAR_EXTENDED_SRGB
+                    : ColorSpaces.SRGB;
             if (opts != null) {
                 opts.outWidth = width;
                 opts.outHeight = height;
@@ -784,10 +1060,10 @@ public final class BitmapFactory {
             int width = memGetInt(pOuts),
                     height = memGetInt(pOuts + 4),
                     channels_in_file = memGetInt(pOuts + 8);
-            Bitmap.Format format = Bitmap.Format.get(channels_in_file, isU16, isHDR);
+            Bitmap.Format format = chooseFormat(channels_in_file, isU16, isHDR);
             ColorSpace cs = isHDR
-                    ? ColorSpace.get(ColorSpace.Named.LINEAR_EXTENDED_SRGB)
-                    : ColorSpace.get(ColorSpace.Named.SRGB);
+                    ? ColorSpaces.LINEAR_EXTENDED_SRGB
+                    : ColorSpaces.SRGB;
             opts.outWidth = width;
             opts.outHeight = height;
             opts.outFormat = format;
@@ -795,150 +1071,238 @@ public final class BitmapFactory {
         }
     }
 
-    @ApiStatus.Internal
-    public static void decodeMimeType(@NonNull Options opts, @NonNull Object input) {
-        try (var stream = ImageIO.createImageInputStream(input)) {
-            if (stream != null) {
-                var readers = ImageIO.getImageReaders(stream);
-                if (readers.hasNext()) {
-                    String[] mimeTypes = readers.next().getOriginatingProvider().getMIMETypes();
-                    if (mimeTypes != null) {
-                        opts.outMimeType = mimeTypes[0];
-                        return;
-                    }
-                }
-                // the order is important
-                if (test(stream, BitmapFactory::filterPSD)) {
-                    opts.outMimeType = "image/vnd.adobe.photoshop";
-                } else if (test(stream, BitmapFactory::filterPIC)) {
-                    opts.outMimeType = "image/x-pict";
-                } else if (test(stream, BitmapFactory::filterPGM)) {
-                    opts.outMimeType = "image/x-portable-graymap";
-                } else if (test(stream, BitmapFactory::filterPPM)) {
-                    opts.outMimeType = "image/x-portable-pixmap";
-                } else if (test(stream, BitmapFactory::filterHDR)) {
-                    opts.outMimeType = "image/vnd.radiance";
-                } else if (test(stream, BitmapFactory::filterTGA)) {
-                    opts.outMimeType = "image/x-tga";
-                }
+    private static Bitmap.Format chooseFormat(int chs, boolean u16, boolean hdr) {
+        if (hdr)
+            return Bitmap.Format.RGBA_F32;
+        if (u16)
+            switch (chs) {
+                case 1:
+                    return Bitmap.Format.GRAY_16;
+                case 2:
+                    return Bitmap.Format.GRAY_ALPHA_1616;
+                case 3:
+                    return Bitmap.Format.RGB_161616;
+                case 4:
+                    return Bitmap.Format.RGBA_16161616;
             }
-        } catch (Exception ignored) {
+        else
+            switch (chs) {
+                case 1:
+                    return Bitmap.Format.GRAY_8;
+                case 2:
+                    return Bitmap.Format.GRAY_ALPHA_88;
+                case 3:
+                    return Bitmap.Format.RGB_888;
+                case 4:
+                    return Bitmap.Format.RGBA_8888;
+            }
+        throw new IllegalArgumentException();
+    }
+
+    //TODO TIFF is todo
+
+    /**
+     * @hide
+     * @hidden
+     */
+    @ApiStatus.Internal
+    public static void decodeMimeType(@NonNull Options opts, @NonNull ByteBuffer input) {
+        // the order is important
+        if (test(input, BitmapFactory::filterPNG)) {
+            opts.outMimeType = "image/png";
+        } else if (test(input, BitmapFactory::filterBMP)) {
+            opts.outMimeType = "image/bmp";
+        } else if (test(input, BitmapFactory::filterGIF)) {
+            opts.outMimeType = "image/gif";
+        } else if (test(input, BitmapFactory::filterPSD)) {
+            opts.outMimeType = "image/vnd.adobe.photoshop";
+        } else if (test(input, BitmapFactory::filterPIC)) {
+            opts.outMimeType = "image/x-softimage-pic";
+        } else if (test(input, BitmapFactory::filterJPEG)) {
+            opts.outMimeType = "image/jpeg";
+        } else if (test(input, BitmapFactory::filterPGM)) {
+            opts.outMimeType = "image/x-portable-graymap";
+        } else if (test(input, BitmapFactory::filterPPM)) {
+            opts.outMimeType = "image/x-portable-pixmap";
+        } else if (test(input, BitmapFactory::filterHDR)) {
+            opts.outMimeType = "image/vnd.radiance";
+        } else if (test(input, BitmapFactory::filterTGA)) {
+            opts.outMimeType = "image/x-tga";
+        } else {
+            // since 3.13.0, clear to null if unknown
+            opts.outMimeType = null;
         }
     }
 
+    /**
+     * @hide
+     * @hidden
+     */
     @ApiStatus.Internal
-    public static boolean test(@NonNull ImageInputStream stream,
-                               @NonNull Predicate<ImageInputStream> filter) {
+    public static boolean test(@NonNull ByteBuffer input,
+                               @NonNull Predicate<ByteBuffer> filter) {
         try {
-            stream.mark();
+            input.mark();
             try {
-                return filter.test(stream);
+                return filter.test(input);
             } finally {
-                stream.reset();
+                input.reset();
             }
         } catch (Exception e) {
             return false;
         }
     }
 
+    /**
+     * @hide
+     * @hidden
+     */
     @ApiStatus.Internal
-    public static boolean filterPSD(@NonNull ImageInputStream stream) {
-        try {
-            return stream.read() == '8' &&
-                    stream.read() == 'B' &&
-                    stream.read() == 'P' &&
-                    stream.read() == 'S';
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
+    public static boolean filterPNG(@NonNull ByteBuffer input) {
+        return input.get() == (byte) 137 &&
+                input.get() == (byte) 80 &&
+                input.get() == (byte) 78 &&
+                input.get() == (byte) 71 &&
+                input.get() == (byte) 13 &&
+                input.get() == (byte) 10 &&
+                input.get() == (byte) 26 &&
+                input.get() == (byte) 10;
     }
 
-    public static boolean filterPIC(@NonNull ImageInputStream stream) {
-        try {
-            if (stream.read() != 0x53 ||
-                    stream.read() != 0x80 ||
-                    stream.read() != 0xF6 ||
-                    stream.read() != 0x34)
-                return false;
-            stream.seek(stream.getStreamPosition() + 84);
-            return stream.read() == 'P' &&
-                    stream.read() == 'I' &&
-                    stream.read() == 'C' &&
-                    stream.read() == 'T';
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
+    /**
+     * @hide
+     * @hidden
+     */
+    @ApiStatus.Internal
+    public static boolean filterBMP(@NonNull ByteBuffer input) {
+        return input.get() == (byte) 'B' &&
+                input.get() == (byte) 'M';
     }
 
+    /**
+     * @hide
+     * @hidden
+     */
     @ApiStatus.Internal
-    public static boolean filterPGM(@NonNull ImageInputStream stream) {
-        try {
-            return stream.read() == 'P' && stream.read() == '5';
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
+    public static boolean filterGIF(@NonNull ByteBuffer input) {
+        int b;
+        return input.get() == (byte) 'G' &&
+                input.get() == (byte) 'I' &&
+                input.get() == (byte) 'F' &&
+                input.get() == (byte) '8' &&
+                ((b = input.get()) == (byte) '7' || b == (byte) '9') &&
+                input.get() == (byte) 'a';
     }
 
+    /**
+     * @hide
+     * @hidden
+     */
     @ApiStatus.Internal
-    public static boolean filterPPM(@NonNull ImageInputStream stream) {
-        try {
-            return stream.read() == 'P' && stream.read() == '6';
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
+    public static boolean filterJPEG(@NonNull ByteBuffer input) {
+        return input.get() == (byte) 0xFF &&
+                input.get() == (byte) 0xD8;
     }
 
+    /**
+     * @hide
+     * @hidden
+     */
     @ApiStatus.Internal
-    public static boolean filterHDR(@NonNull ImageInputStream stream) {
-        try {
-            return stream.read() == '#' &&
-                    stream.read() == '?' &&
-                    stream.read() == 'R' &&
-                    stream.read() == 'A' &&
-                    stream.read() == 'D' &&
-                    stream.read() == 'I' &&
-                    stream.read() == 'A' &&
-                    stream.read() == 'N' &&
-                    stream.read() == 'C' &&
-                    stream.read() == 'E' &&
-                    stream.read() == '\n';
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
+    public static boolean filterPSD(@NonNull ByteBuffer input) {
+        return input.get() == (byte) '8' &&
+                input.get() == (byte) 'B' &&
+                input.get() == (byte) 'P' &&
+                input.get() == (byte) 'S';
     }
 
+    /**
+     * @hide
+     * @hidden
+     */
     @ApiStatus.Internal
-    public static boolean filterTGA(@NonNull ImageInputStream stream) {
+    public static boolean filterPIC(@NonNull ByteBuffer input) {
+        if (input.get() != (byte) 0x53 ||
+                input.get() != (byte) 0x80 ||
+                input.get() != (byte) 0xF6 ||
+                input.get() != (byte) 0x34)
+            return false;
+        input.position(input.position() + 84);
+        return input.get() == (byte) 'P' &&
+                input.get() == (byte) 'I' &&
+                input.get() == (byte) 'C' &&
+                input.get() == (byte) 'T';
+    }
+
+    /**
+     * @hide
+     * @hidden
+     */
+    @ApiStatus.Internal
+    public static boolean filterPGM(@NonNull ByteBuffer input) {
+        return input.get() == (byte) 'P' && input.get() == (byte) '5';
+    }
+
+    /**
+     * @hide
+     * @hidden
+     */
+    @ApiStatus.Internal
+    public static boolean filterPPM(@NonNull ByteBuffer input) {
+        return input.get() == (byte) 'P' && input.get() == (byte) '6';
+    }
+
+    /**
+     * @hide
+     * @hidden
+     */
+    @ApiStatus.Internal
+    public static boolean filterHDR(@NonNull ByteBuffer input) {
+        return input.get() == (byte) '#' &&
+                input.get() == (byte) '?' &&
+                input.get() == (byte) 'R' &&
+                input.get() == (byte) 'A' &&
+                input.get() == (byte) 'D' &&
+                input.get() == (byte) 'I' &&
+                input.get() == (byte) 'A' &&
+                input.get() == (byte) 'N' &&
+                input.get() == (byte) 'C' &&
+                input.get() == (byte) 'E' &&
+                input.get() == (byte) '\n';
+    }
+
+    /**
+     * @hide
+     * @hidden
+     */
+    @ApiStatus.Internal
+    public static boolean filterTGA(@NonNull ByteBuffer input) {
         // TGA has no magic number, it must be the last
-        try {
-            stream.read();
-            int color_map_type = stream.read();
-            if (color_map_type != 0 && color_map_type != 1)
+        input.get();
+        int color_map_type = input.get() & 0xff;
+        if (color_map_type != 0 && color_map_type != 1)
+            return false;
+        int data_type_code = input.get() & 0xff;
+        if (color_map_type == 1) {
+            // Uncompressed, color-mapped images.
+            // Run-Length Encoded color-mapped images.
+            if (data_type_code != 1 && data_type_code != 9)
                 return false;
-            int data_type_code = stream.read();
-            if (color_map_type == 1) {
-                // Uncompressed, color-mapped images.
-                // Run-Length Encoded color-mapped images.
-                if (data_type_code != 1 && data_type_code != 9)
-                    return false;
-                stream.readInt(); // color map range
-                int color_map_depth = stream.read();
-                if (color_map_depth != 16 && color_map_depth != 24 && color_map_depth != 32)
-                    return false;
-            } else {
-                if (data_type_code != 2 && data_type_code != 3 && data_type_code != 10 && data_type_code != 11)
-                    return false;
-                stream.readInt(); // color map range
-                stream.read(); // color map depth
-            }
-            stream.readInt(); // origin
-            stream.readInt(); // dimensions
-            int bits_per_pixel = stream.read();
-            if (color_map_type == 1 && bits_per_pixel != 8 && bits_per_pixel != 16)
+            input.getInt(); // color map range
+            int color_map_depth = input.get() & 0xff;
+            if (color_map_depth != 16 && color_map_depth != 24 && color_map_depth != 32)
                 return false;
-            return bits_per_pixel == 16 || bits_per_pixel == 24 || bits_per_pixel == 32;
-        } catch (IOException e) {
-            throw new RuntimeException(e);
+        } else {
+            if (data_type_code != 2 && data_type_code != 3 && data_type_code != 10 && data_type_code != 11)
+                return false;
+            input.getInt(); // color map range
+            input.get(); // color map depth
         }
+        input.getInt(); // origin
+        input.getInt(); // dimensions
+        int bits_per_pixel = input.get() & 0xff;
+        if (color_map_type == 1 && bits_per_pixel != 8 && bits_per_pixel != 16)
+            return false;
+        return bits_per_pixel == 16 || bits_per_pixel == 24 || bits_per_pixel == 32;
     }
 }

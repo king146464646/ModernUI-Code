@@ -1,19 +1,19 @@
 /*
- * Modern UI.
+ * ModernUI.
  * Copyright (C) 2024-2025 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  *
  * This file incorporates work covered by the following copyright and
  * permission notice:
@@ -185,7 +185,7 @@ public class HorizontalScrollView extends FrameLayout {
         ColorStateList tint = null;
         final TypedValue value = new TypedValue();
         if (context.getTheme().resolveAttribute(R.ns, R.attr.colorControlNormal, value, true)) {
-            tint = context.getResources().loadColorStateList(value, context.getTheme());
+            tint = context.getResources().loadColorStateList(value, null, context.getTheme());
         }
         setHorizontalScrollBarEnabled(true);
         ShapeDrawable thumb = new ShapeDrawable();
@@ -313,6 +313,7 @@ public class HorizontalScrollView extends FrameLayout {
      * @see #getRightEdgeEffectColor()
      */
     @ColorInt
+    @Deprecated(forRemoval = true)
     public int getLeftEdgeEffectColor() {
         return mEdgeGlowLeft.getColor();
     }
@@ -327,6 +328,7 @@ public class HorizontalScrollView extends FrameLayout {
      * @see #getLeftEdgeEffectColor()
      */
     @ColorInt
+    @Deprecated(forRemoval = true)
     public int getRightEdgeEffectColor() {
         return mEdgeGlowRight.getColor();
     }
@@ -512,14 +514,14 @@ public class HorizontalScrollView extends FrameLayout {
         if (event.getAction() == KeyEvent.ACTION_DOWN) {
             switch (event.getKeyCode()) {
                 case KeyEvent.KEY_LEFT:
-                    if (!event.isAltPressed()) {
+                    if (KeyEvent.IS_MACOS ? !event.isSuperPressed() : !event.isAltPressed()) {
                         handled = arrowScroll(View.FOCUS_LEFT);
                     } else {
                         handled = fullScroll(View.FOCUS_LEFT);
                     }
                     break;
                 case KeyEvent.KEY_RIGHT:
-                    if (!event.isAltPressed()) {
+                    if (KeyEvent.IS_MACOS ? !event.isSuperPressed() : !event.isAltPressed()) {
                         handled = arrowScroll(View.FOCUS_RIGHT);
                     } else {
                         handled = fullScroll(View.FOCUS_RIGHT);
@@ -652,7 +654,7 @@ public class HorizontalScrollView extends FrameLayout {
                  */
                 mIsBeingDragged = !mScroller.isFinished()/* || !mEdgeGlowLeft.isFinished()
                         || !mEdgeGlowRight.isFinished()*/;
-                // Modern UI: do not intercept if edge effects are not finished
+                // ModernUI: do not intercept if edge effects are not finished
                 // If user clicks too fast, edge effects will not finish, and events will always be intercepted
 
                 // Catch the edge effect if it is active.
@@ -1673,7 +1675,7 @@ public class HorizontalScrollView extends FrameLayout {
         if (velocity > 0) {
             return true;
         }
-        // Not used by Modern UI, the following branch should return false
+        // Not used by ModernUI, the following branch should return false
         float distance = 0;//edgeEffect.getDistance() * getWidth();
 
         // This is flinging without the spring, so let's see if it will fling past the overscroll

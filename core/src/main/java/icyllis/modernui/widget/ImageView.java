@@ -1,19 +1,19 @@
 /*
- * Modern UI.
- * Copyright (C) 2019-2024 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2022-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package icyllis.modernui.widget;
@@ -29,6 +29,7 @@ import icyllis.modernui.graphics.BlendMode;
 import icyllis.modernui.graphics.Canvas;
 import icyllis.modernui.graphics.ColorFilter;
 import icyllis.modernui.graphics.Image;
+import icyllis.modernui.graphics.MathUtil;
 import icyllis.modernui.graphics.Matrix;
 import icyllis.modernui.graphics.drawable.Drawable;
 import icyllis.modernui.graphics.drawable.ImageDrawable;
@@ -57,6 +58,7 @@ public class ImageView extends View {
 
     private final Matrix mMatrix = new Matrix();
     private ScaleType mScaleType = ScaleType.FIT_CENTER;
+    private boolean mHaveFrame = false;
     private boolean mAdjustViewBounds = false;
     private int mMaxWidth = Integer.MAX_VALUE;
     private int mMaxHeight = Integer.MAX_VALUE;
@@ -64,7 +66,7 @@ public class ImageView extends View {
     // these are applied to the drawable
     private ColorFilter mImageColorFilter = null;
     private boolean mHasImageColorFilter = false;
-    private int mImageAlpha = 255;
+    private float mImageAlpha = 1f;
     private boolean mHasImageAlpha = false;
 
     private Drawable mDrawable = null;
@@ -761,11 +763,12 @@ public class ImageView extends View {
     @Override
     protected void onSizeChanged(int width, int height, int prevWidth, int prevHeight) {
         super.onSizeChanged(width, height, prevWidth, prevHeight);
+        mHaveFrame = true;
         configureBounds();
     }
 
     private void configureBounds() {
-        if (mDrawable == null || !isAttachedToWindow()) {
+        if (mDrawable == null || !mHaveFrame) {
             return;
         }
 
@@ -1044,12 +1047,29 @@ public class ImageView extends View {
      * Returns the alpha that will be applied to the drawable of this ImageView.
      *
      * @return the alpha value that will be applied to the drawable of this
-     * ImageView (between 0 and 255 inclusive, with 0 being transparent and
-     * 255 being opaque)
-     * @see #setImageAlpha(int)
+     * ImageView (between 0.0 and 1.0 inclusive, with 0.0 being transparent and
+     * 1.0 being opaque)
+     * @see #setImageAlpha(float)
      */
-    public int getImageAlpha() {
+    public float getImageAlpha() {
         return mImageAlpha;
+    }
+
+    /**
+     * Sets the alpha value that should be applied to the image.
+     *
+     * @param alpha the alpha value that should be applied to the image (between
+     *              0.0 and 1.0 inclusive, with 0.0 being transparent and 1.0 being opaque)
+     * @see #getImageAlpha()
+     */
+    public void setImageAlpha(float alpha) {
+        alpha = MathUtil.clamp(alpha, 0f, 1f);
+        if (mImageAlpha != alpha) {
+            mImageAlpha = alpha;
+            mHasImageAlpha = true;
+            applyAlpha();
+            invalidate();
+        }
     }
 
     /**
@@ -1058,15 +1078,11 @@ public class ImageView extends View {
      * @param alpha the alpha value that should be applied to the image (between
      *              0 and 255 inclusive, with 0 being transparent and 255 being opaque)
      * @see #getImageAlpha()
+     * @deprecated use {@link #setImageAlpha(float)} instead
      */
+    @Deprecated
     public void setImageAlpha(int alpha) {
-        alpha += alpha >> 7; // keep it legal
-        if (mImageAlpha != alpha) {
-            mImageAlpha = alpha;
-            mHasImageAlpha = true;
-            applyAlpha();
-            invalidate();
-        }
+        setImageAlpha(alpha * (1/255f));
     }
 
     private void applyColorFilter() {

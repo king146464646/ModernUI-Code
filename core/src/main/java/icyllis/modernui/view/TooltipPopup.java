@@ -1,19 +1,19 @@
 /*
- * Modern UI.
+ * ModernUI.
  * Copyright (C) 2023-2025 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  *
  * This file incorporates work covered by the following copyright and
  * permission notice:
@@ -43,6 +43,9 @@ import icyllis.modernui.resources.TypedValue;
 import icyllis.modernui.widget.TextView;
 import org.jetbrains.annotations.ApiStatus;
 
+/**
+ * @hidden
+ */
 // Modified from Android
 @ApiStatus.Internal
 public class TooltipPopup {
@@ -60,7 +63,7 @@ public class TooltipPopup {
         final TypedValue value = new TypedValue();
         mTextView.setTextAppearance(R.attr.textAppearanceBodySmall);
         if (theme.resolveAttribute(R.ns, R.attr.colorOnSurfaceInverse, value, true))
-            mTextView.setTextColor(value.data);
+            mTextView.setTextColor(context.getResources().loadColorStateList(value, null, theme));
         mTextView.setGravity(Gravity.CENTER_VERTICAL);
         mParams = new WindowManager.LayoutParams();
         mParams.width = ViewGroup.LayoutParams.WRAP_CONTENT;
@@ -70,7 +73,7 @@ public class TooltipPopup {
         var background = new ShapeDrawable();
         background.setShape(ShapeDrawable.RECTANGLE);
         if (theme.resolveAttribute(R.ns, R.attr.colorSurfaceInverse, value, true))
-            background.setColor(value.data);
+            background.setColor(context.getResources().loadColorStateList(value, null, theme));
         background.setCornerRadius(mTextView.dp(4));
         mTextView.setBackground(background);
     }

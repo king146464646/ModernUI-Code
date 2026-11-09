@@ -1,25 +1,24 @@
 /*
- * Modern UI.
- * Copyright (C) 2025 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2025-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package icyllis.modernui.util;
 
 import icyllis.modernui.annotation.NonNull;
-import icyllis.modernui.text.GetChars;
 import org.jetbrains.annotations.ApiStatus;
 
 import java.util.Objects;
@@ -30,7 +29,7 @@ import java.util.Objects;
  */
 @ApiStatus.Experimental
 public record StringView(@NonNull String string, int offset, int length)
-        implements Comparable<CharSequence>, CharSequence, GetChars {
+        implements Comparable<CharSequence>, CharSequence {
 
     public StringView(@NonNull String string, int offset, int length) {
         this.offset = Objects.checkFromIndexSize(offset, length, string.length());
@@ -54,7 +53,6 @@ public record StringView(@NonNull String string, int offset, int length)
         return new StringView(string, offset + start, end - start);
     }
 
-    @Override
     public void getChars(int srcBegin, int srcEnd, char[] dst, int dstBegin) {
         Objects.checkFromToIndex(srcBegin, srcEnd, length);
         string.getChars(offset + srcBegin, offset + srcEnd, dst, dstBegin);

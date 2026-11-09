@@ -1,19 +1,19 @@
 /*
- * Modern UI.
- * Copyright (C) 2023-2025 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2023-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  *
  * This file incorporates work covered by the following copyright and
  * permission notice:
@@ -1024,7 +1024,7 @@ public class LayerDrawable extends Drawable implements Drawable.Callback {
     }
 
     @Override
-    public void setAlpha(int alpha) {
+    public void setAlpha(float alpha) {
         final ChildDrawable[] array = mLayerState.mChildren;
         final int N = mLayerState.mNumChildren;
         for (int i = 0; i < N; i++) {
@@ -1036,7 +1036,7 @@ public class LayerDrawable extends Drawable implements Drawable.Callback {
     }
 
     @Override
-    public int getAlpha() {
+    public float getAlpha() {
         final Drawable dr = getFirstNonNullDrawable();
         if (dr != null) {
             return dr.getAlpha();
@@ -1045,7 +1045,7 @@ public class LayerDrawable extends Drawable implements Drawable.Callback {
         }
     }
 
-    /*@Override
+    @Override
     public void setColorFilter(ColorFilter colorFilter) {
         final ChildDrawable[] array = mLayerState.mChildren;
         final int N = mLayerState.mNumChildren;
@@ -1055,7 +1055,7 @@ public class LayerDrawable extends Drawable implements Drawable.Callback {
                 dr.setColorFilter(colorFilter);
             }
         }
-    }*/
+    }
 
     @Override
     public void setTintList(ColorStateList tint) {

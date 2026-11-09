@@ -1,29 +1,29 @@
 /*
- * Modern UI.
- * Copyright (C) 2019-2021 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2021-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package icyllis.modernui.graphics;
 
 import icyllis.modernui.annotation.ColorInt;
+import icyllis.modernui.annotation.ColorLong;
 import icyllis.modernui.annotation.NonNull;
 import icyllis.modernui.annotation.Nullable;
 import icyllis.modernui.annotation.Size;
 import icyllis.modernui.core.Core;
-import icyllis.modernui.graphics.text.FontPaint;
 import org.intellij.lang.annotations.MagicConstant;
 import org.jetbrains.annotations.ApiStatus;
 
@@ -67,7 +67,7 @@ public class Paint {
          * is oriented counter-clockwise. This restriction does not apply to
          * either FILL or STROKE.
          */
-        FILL_AND_STROKE (icyllis.arc3d.sketch.Paint.FILL_AND_STROKE);
+        FILL_AND_STROKE (icyllis.arc3d.sketch.Paint.STROKE_AND_FILL);
 
         final int nativeInt;
 
@@ -254,18 +254,34 @@ public class Paint {
     private static final int ALIGN_SHIFT = 6;
     private static final int ALIGN_MASK = 0xC0;
 
-    static final int TEXT_ANTI_ALIAS_DEFAULT = 0x0;
-    static final int TEXT_ANTI_ALIAS_OFF = 0x4;
-    static final int TEXT_ANTI_ALIAS_ON = 0x8;
-    static final int TEXT_ANTI_ALIAS_MASK = 0xC;
+    /**
+     * @hidden
+     */
+    @ApiStatus.Internal
+    public static final int TEXT_ANTI_ALIAS_DEFAULT = 0x0,
+            TEXT_ANTI_ALIAS_OFF = 0x4,
+            TEXT_ANTI_ALIAS_ON = 0xC,
+            TEXT_ANTI_ALIAS_MASK = 0xC;
 
-    static final int LINEAR_TEXT_FLAG = 0x10;
+    /**
+     * @hidden
+     */
+    @ApiStatus.Internal
+    public static final int LINEAR_TEXT_FLAG = 0x10;
 
-    static final int FILTER_MODE_SHIFT = 5;
-    static final int FILTER_MODE_MASK = 0x20;
+    /**
+     * @hidden
+     */
+    @ApiStatus.Internal
+    public static final int FILTER_MODE_SHIFT = 5,
+            FILTER_MODE_MASK = 0x20;
 
-    static final int MIPMAP_MODE_SHIFT = 6;
-    static final int MIPMAP_MODE_MASK = 0xC0;
+    /**
+     * @hidden
+     */
+    @ApiStatus.Internal
+    public static final int MIPMAP_MODE_SHIFT = 6,
+            MIPMAP_MODE_MASK = 0xC0;
 
     /**
      * @hidden
@@ -284,9 +300,28 @@ public class Paint {
 
     private ColorFilter mColorFilter;
 
-    // rendering hints
-    private int mFlags;
-    private float mTextSize;
+    /*
+     * Shared by Paint and TextPaint
+     * |-------|-------|-------|-------|
+     *                                00 NORMAL (default)
+     *                                01 BOLD
+     *                                10 ITALIC
+     *                                11 BOLD_ITALIC
+     *                                11 TEXT_STYLE_MASK
+     *                              00   TEXT_ANTI_ALIAS_DEFAULT (default)
+     *                              01   TEXT_ANTI_ALIAS_OFF
+     *                              11   TEXT_ANTI_ALIAS_ON
+     *                              11   TEXT_ANTI_ALIAS_MASK
+     *                             1     LINEAR_TEXT_FLAG
+     *                            1      FILTER_MODE_MASK
+     *                          11       MIPMAP_MODE_MASK
+     * |-------|-------|-------|-------|
+     */
+    /**
+     * @hidden
+     */
+    @ApiStatus.Internal
+    protected int mFlags;
 
     /**
      * Creates a new Paint with defaults.
@@ -394,16 +429,22 @@ public class Paint {
         }
     }
 
-    private void internalReset() {
+    /**
+     * @hidden
+     */
+    @ApiStatus.Internal
+    protected void internalReset() {
         mColorFilter = null;
         mFlags = sDefaultFlags;
-        mTextSize = 16;
     }
 
-    private void internalSetFrom(@NonNull Paint paint) {
+    /**
+     * @hidden
+     */
+    @ApiStatus.Internal
+    protected void internalSetFrom(@NonNull Paint paint) {
         mColorFilter = paint.mColorFilter;
         mFlags = paint.mFlags;
-        mTextSize = paint.mTextSize;
     }
 
     ///// Solid Color
@@ -412,17 +453,45 @@ public class Paint {
      * Return the paint's solid color in sRGB. Note that the color is a 32-bit value
      * containing alpha as well as r,g,b. This 32-bit value is not premultiplied,
      * meaning that its alpha can be any value, regardless of the values of r,g,b.
+     * <p>
+     * This method is obsolete and discouraged. Converting color to a
+     * packed 32-bit integer (8-bit per channel) leads to precision loss.
+     * Use this only if you specifically need to quantize color components for storage
+     * or legacy API compatibility. Otherwise, use {@link #getColor4f()} or {@link #getColorLong()}.
      *
      * @return the paint's color (and alpha).
+     * @deprecated the signature of this method will be changed in future versions,
+     * cause a binary incompatibility
      */
+    @ApiStatus.Obsolete
+    @Deprecated(forRemoval = true)
     public int getColor() {
-        return mPaint.getColor();
+        return ((int) (mPaint.getAlpha() * 255.0f + 0.5f) << 24) |
+                ((int) (mPaint.getRed() * 255.0f + 0.5f) << 16) |
+                ((int) (mPaint.getGreen() * 255.0f + 0.5f) << 8) |
+                (int) (mPaint.getBlue() * 255.0f + 0.5f);
+    }
+
+    /**
+     * Return the paint's solid color in sRGB. Note that the color is a 64-bit value
+     * containing alpha as well as r,g,b. This 64-bit value is not premultiplied,
+     * meaning that its alpha can be any value, regardless of the values of r,g,b.
+     *
+     * @return the paint's color (and alpha).
+     * @see Color
+     * @since 3.13
+     */
+    @ColorLong
+    public long getColorLong() {
+        return Color.pack(mPaint.getRed(), mPaint.getGreen(), mPaint.getBlue(), mPaint.getAlpha());
     }
 
     /**
      * Set the paint's solid color in sRGB. Note that the color is a 32-bit value
      * containing alpha as well as r,g,b. This 32-bit value is not premultiplied,
      * meaning that its alpha can be any value, regardless of the values of r,g,b.
+     * <p>
+     * Use {@link #setColor4f} for full-precision floating-point access.
      *
      * @param color the new color (including alpha) to set in the paint.
      */
@@ -431,22 +500,40 @@ public class Paint {
     }
 
     /**
+     * Set the paint's solid color in extended sRGB nonlinear space.
+     * Note that the color is created using {@link Color#pack} methods,
+     * containing alpha as well as r,g,b. This 64-bit value is not premultiplied,
+     * meaning that its alpha can be any value, regardless of the values of r,g,b.
+     *
+     * @param color the new color (including alpha) to set in the paint.
+     */
+    public void setColor(@ColorLong long color) {
+        mPaint.setColor4f(
+                Color.red(color),
+                Color.green(color),
+                Color.blue(color),
+                Color.alpha(color));
+    }
+
+    /**
      * Returns alpha and RGB used when stroking and filling. The color is four floating
      * point values, un-premultiplied. The color values are interpreted as being in
-     * the sRGB color space.
+     * the extended sRGB nonlinear color space.
+     * <p>
+     * Use {@link #getColor4f(float[])} to avoid creating a new array.
      *
      * @return a new float array that contains r,g,b,a values
      */
     @NonNull
     @Size(4)
     public float[] getColor4f() {
-        return new float[]{mPaint.r(), mPaint.g(), mPaint.b(), mPaint.a()};
+        return new float[]{mPaint.getRed(), mPaint.getGreen(), mPaint.getBlue(), mPaint.getAlpha()};
     }
 
     /**
      * Returns alpha and RGB used when stroking and filling. The color is four floating
      * point values, un-premultiplied. The color values are interpreted as being in
-     * the sRGB color space.
+     * the extended sRGB nonlinear color space.
      *
      * @param dst a non-null array of 4 floats that will hold the result of the method
      * @return the passed float array that contains r,g,b,a values
@@ -459,13 +546,62 @@ public class Paint {
     }
 
     /**
+     * Returns the raw value of the red component.
+     * It's in sRGB space and independent of alpha.
+     *
+     * @see #getAlphaF()
+     * @see #getRed()
+     * @see #getGreen()
+     * @return red value
+     * @since 3.13.0
+     */
+    public float getRed() {
+        return mPaint.getRed();
+    }
+
+    /**
+     * Returns the raw value of the green component.
+     * It's in sRGB space and independent of alpha.
+     *
+     * @see #getAlphaF()
+     * @see #getRed()
+     * @see #getBlue()
+     * @return green value
+     * @since 3.13.0
+     */
+    public float getGreen() {
+        return mPaint.getGreen();
+    }
+
+    /**
+     * Returns the raw value of the blue component.
+     * It's in sRGB space and independent of alpha.
+     *
+     * @see #getAlphaF()
+     * @see #getGreen()
+     * @see #getBlue()
+     * @return blue value
+     * @since 3.13.0
+     */
+    public float getBlue() {
+        return mPaint.getBlue();
+    }
+
+    /**
      * Sets alpha and RGB used when stroking and filling. The color is four floating
      * point values, un-premultiplied. The color values are interpreted as being in
-     * the sRGB color space.
+     * the sRGB color space. The alpha value will be clamped to 0..1, NaN alpha will
+     * become 0.
+     * <p>
+     * Starting from 3.13.0, this method will no longer clamp R, G, B values to 0..1.
+     * Thus, the color is interpreted as extended sRGB color space, compatible with
+     * colors from any color space, as long as the rendering intent is relative.
+     * The rendering pipeline still applies the gamut and transfer function to
+     * out of range values.
      *
-     * @param r the new red component (0..1) of the paint's color.
-     * @param g the new green component (0..1) of the paint's color.
-     * @param b the new blue component (0..1) of the paint's color.
+     * @param r the new red component of the paint's color.
+     * @param g the new green component of the paint's color.
+     * @param b the new blue component of the paint's color.
      * @param a the new alpha component (0..1) of the paint's color.
      */
     public void setColor4f(float r, float g, float b, float a) {
@@ -476,30 +612,44 @@ public class Paint {
      * Helper to getColor() that just returns the color's alpha value. This is
      * the same as calling getColor() >>> 24. It always returns a value between
      * 0 (completely transparent) and 255 (completely opaque).
+     * <p>
+     * This method is obsolete and discouraged.
+     * Converting alpha to an 8-bit integer leads to precision loss.
+     * Use this only if you specifically need to quantize alpha values for storage
+     * or legacy API compatibility. Otherwise, use {@link #getAlphaF()}.
      *
      * @return the alpha component of the paint's color.
+     * @deprecated the signature of this method will be changed in future versions,
+     * cause a binary incompatibility
      */
+    @Deprecated(forRemoval = true)
+    @ApiStatus.Obsolete
     public int getAlpha() {
-        return mPaint.getAlpha();
+        return (int) (mPaint.getAlpha() * 255.0f + 0.5f);
     }
 
     /**
      * Helper to setColor(), that only assigns the color's alpha value,
      * leaving its r,g,b values unchanged.
+     * <p>
+     * Use {@link #setAlphaF(float)} for full-precision floating-point access.
      *
      * @param a the alpha component [0..255] of the paint's color
      */
     public void setAlpha(int a) {
-        mPaint.setAlpha(a);
+        mPaint.setAlpha(a * (1 / 255.0f));
     }
 
     /**
      * Retrieves alpha/opacity from the color used when stroking and filling.
      *
+     * @see #getRed()
+     * @see #getGreen()
+     * @see #getBlue()
      * @return alpha ranging from zero, fully transparent, to one, fully opaque
      */
     public float getAlphaF() {
-        return mPaint.getAlphaF();
+        return mPaint.getAlpha();
     }
 
     /**
@@ -511,13 +661,29 @@ public class Paint {
      * @param a the alpha component [0..1] of the paint's color
      */
     public void setAlphaF(float a) {
-        mPaint.setAlphaF(a);
+        mPaint.setAlpha(a);
+    }
+
+    /**
+     * Replaces alpha, leaving RGB unchanged.
+     * <code>a</code> is a value from 0.0 to 1.0.
+     * <code>a</code> set to 0.0 makes color fully transparent;
+     * <code>a</code> set to 1.0 makes color fully opaque.
+     *
+     * @param a the alpha component [0..1] of the paint's color
+     * @see 3.13.0
+     */
+    public void setAlpha(float a) {
+        mPaint.setAlpha(a);
     }
 
     /**
      * Sets alpha and RGB used when stroking and filling. The color is four floating
      * point values, un-premultiplied. The color values are interpreted as being in
      * the sRGB color space.
+     * <p>
+     * This method clamps the R,G,B values to 0..1, use {@link #setColor4f}
+     * for unclamped floating-point access.
      *
      * @param r the new red component (0..1) of the paint's color.
      * @param g the new green component (0..1) of the paint's color.
@@ -525,7 +691,11 @@ public class Paint {
      * @param a the new alpha component (0..1) of the paint's color.
      */
     public final void setRGBA(float r, float g, float b, float a) {
-        setColor4f(r, g, b, a);
+        setColor4f(
+                MathUtil.pin(r, 0f, 1f),
+                MathUtil.pin(g, 0f, 1f),
+                MathUtil.pin(b, 0f, 1f),
+                a);
     }
 
     /**
@@ -538,7 +708,7 @@ public class Paint {
      * @param a amount of alpha, from fully transparent (0) to fully opaque (255)
      */
     public void setRGBA(int r, int g, int b, int a) {
-        mPaint.setRGBA(r, g, b, a);
+        mPaint.setColor4(r, g, b, a);
     }
 
     /**
@@ -551,7 +721,7 @@ public class Paint {
      * @param b amount of blue, from no blue (0) to full blue (255)
      */
     public void setARGB(int a, int r, int g, int b) {
-        mPaint.setARGB(a, r, g, b);
+        mPaint.setColor4(r, g, b, a);
     }
 
     ///// Basic Flags
@@ -865,80 +1035,6 @@ public class Paint {
         mPaint.setBlendMode(mode != null ? mode.getNativeBlendMode() : null);
     }
 
-    ///// Text Parameters
-
-    /**
-     * Return the paint's text size in pixel units.
-     * <p>
-     * The default value is 16.
-     *
-     * @return the paint's text size in pixel units.
-     * @see #setTextSize(float)
-     */
-    public float getTextSize() {
-        return mTextSize;
-    }
-
-    /**
-     * Set the paint's text size in pixel units. For example, a text size
-     * of 16 (1em) means the letter 'M' is 16 pixels high in device space.
-     * Very large or small sizes will impact rendering performance, and the
-     * rendering system might not render text at these sizes. For now, text
-     * sizes will clamp to 1 and 2184. You can have even larger glyphs through
-     * matrix transformation, and our engine will attempt to use SDF text rendering.
-     * This method has no effect if size is not greater than or equal to zero.
-     * <p>
-     * The default value is 16.
-     *
-     * @param textSize set the paint's text size in pixel units.
-     */
-    public void setTextSize(float textSize) {
-        if (textSize >= 0) {
-            mTextSize = textSize;
-        }
-    }
-
-    public boolean isTextAntiAlias() {
-        return switch (mFlags & TEXT_ANTI_ALIAS_MASK) {
-            case TEXT_ANTI_ALIAS_ON -> true;
-            case TEXT_ANTI_ALIAS_OFF -> false;
-            default -> isAntiAlias();
-        };
-    }
-
-    public void setTextAntiAlias(boolean textAA) {
-        mFlags = (mFlags & ~TEXT_ANTI_ALIAS_MASK) |
-                (textAA ? TEXT_ANTI_ALIAS_ON : TEXT_ANTI_ALIAS_OFF);
-    }
-
-    /**
-     * @return whether to enable linear text
-     */
-    public boolean isLinearText() {
-        return (mFlags & LINEAR_TEXT_FLAG) != 0;
-    }
-
-    /**
-     * Paint flag that enables smooth linear scaling of text.
-     *
-     * <p>Enabling this flag does not actually scale text, but rather adjusts
-     * text draw operations to deal gracefully with smooth adjustment of scale.
-     * When this flag is enabled, font hinting is disabled to prevent shape
-     * deformation between scale factors, and glyph caching is disabled due to
-     * the large number of glyph images that will be generated.</p>
-     *
-     * <p>Since 3.12, enabling linear text also enables subpixel positioning.</p>
-     *
-     * @param linearText whether to enable linear text
-     */
-    public void setLinearText(boolean linearText) {
-        if (linearText) {
-            mFlags |= LINEAR_TEXT_FLAG;
-        } else {
-            mFlags &= ~LINEAR_TEXT_FLAG;
-        }
-    }
-
     ///// Sampler Parameters
 
     /**
@@ -1020,26 +1116,10 @@ public class Paint {
         return mPaint;
     }
 
-    /**
-     * Populates font attributes to native font object, excluding the typeface.
-     *
-     * @hidden
-     */
-    @ApiStatus.Internal
-    public void getNativeFont(@NonNull icyllis.arc3d.sketch.Font nativeFont) {
-        nativeFont.setSize(FontPaint.getCanonicalFontSize(getTextSize()));
-        nativeFont.setEdging(isTextAntiAlias()
-                ? icyllis.arc3d.sketch.Font.kAntiAlias_Edging
-                : icyllis.arc3d.sketch.Font.kAlias_Edging);
-        nativeFont.setLinearMetrics(isLinearText());
-        nativeFont.setSubpixel(isLinearText());
-    }
-
     @Override
     public int hashCode() {
         int result = mPaint.hashCode();
         result = 31 * result + mFlags;
-        result = 31 * result + Float.floatToIntBits(mTextSize);
         return result;
     }
 
@@ -1048,7 +1128,6 @@ public class Paint {
         if (this == o) return true;
         if (!(o instanceof Paint paint)) return false;
         return mPaint.equals(paint.mPaint) &&
-                mFlags == paint.mFlags &&
-                mTextSize == paint.mTextSize;
+                mFlags == paint.mFlags;
     }
 }

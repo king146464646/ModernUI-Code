@@ -1,19 +1,19 @@
 /*
- * Modern UI.
- * Copyright (C) 2021-2025 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2021-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  *
  * This file incorporates work covered by the following copyright and
  * permission notice:
@@ -46,6 +46,7 @@ import icyllis.modernui.resources.Resources;
 import icyllis.modernui.util.ColorStateList;
 import icyllis.modernui.util.LayoutDirection;
 import icyllis.modernui.util.SparseArray;
+import icyllis.modernui.view.View;
 
 /**
  * A helper class that contains several {@link Drawable}s and selects which one to use.
@@ -58,7 +59,7 @@ public class DrawableContainer extends Drawable implements Drawable.Callback {
     private Rect mHotspotBounds;
     private Drawable mCurrDrawable;
     private Drawable mLastDrawable;
-    private int mAlpha = 0xFF;
+    private float mAlpha = 1f;
 
     /**
      * Whether setAlpha() has been called at least once.
@@ -125,7 +126,7 @@ public class DrawableContainer extends Drawable implements Drawable.Callback {
     }
 
     @Override
-    public void setAlpha(int alpha) {
+    public void setAlpha(float alpha) {
         if (!mHasAlpha || mAlpha != alpha) {
             mHasAlpha = true;
             mAlpha = alpha;
@@ -140,7 +141,7 @@ public class DrawableContainer extends Drawable implements Drawable.Callback {
     }
 
     @Override
-    public int getAlpha() {
+    public float getAlpha() {
         return mAlpha;
     }
 
@@ -310,7 +311,7 @@ public class DrawableContainer extends Drawable implements Drawable.Callback {
     }
 
     @Override
-    protected boolean onLayoutDirectionChanged(int layoutDirection) {
+    protected boolean onLayoutDirectionChanged(@View.ResolvedLayoutDir int layoutDirection) {
         // Let the container handle setting its own layout direction. Otherwise,
         // we're accessing potentially unused states.
         return mDrawableContainerState.setLayoutDirection(layoutDirection, getCurrentIndex());
@@ -510,9 +511,9 @@ public class DrawableContainer extends Drawable implements Drawable.Callback {
                     mCurrDrawable.setAlpha(mAlpha);
                     mEnterAnimationEnd = 0;
                 } else {
-                    int animAlpha = (int) ((mEnterAnimationEnd - now) * 255)
+                    float animAlpha = (float) (mEnterAnimationEnd - now)
                             / mDrawableContainerState.mEnterFadeDuration;
-                    mCurrDrawable.setAlpha(((255 - animAlpha) * mAlpha) / 255);
+                    mCurrDrawable.setAlpha((1f - animAlpha) * mAlpha);
                     animating = true;
                 }
             }
@@ -526,9 +527,9 @@ public class DrawableContainer extends Drawable implements Drawable.Callback {
                     mLastDrawable = null;
                     mExitAnimationEnd = 0;
                 } else {
-                    int animAlpha = (int) ((mExitAnimationEnd - now) * 255)
+                    float animAlpha = (float) (mExitAnimationEnd - now)
                             / mDrawableContainerState.mExitFadeDuration;
-                    mLastDrawable.setAlpha((animAlpha * mAlpha) / 255);
+                    mLastDrawable.setAlpha(animAlpha * mAlpha);
                     animating = true;
                 }
             }
@@ -630,6 +631,7 @@ public class DrawableContainer extends Drawable implements Drawable.Callback {
         boolean mCanConstantState;
 
         boolean mMutated;
+        @View.ResolvedLayoutDir
         int mLayoutDirection;
 
         int mEnterFadeDuration = 0;
@@ -801,7 +803,7 @@ public class DrawableContainer extends Drawable implements Drawable.Callback {
             return null;
         }
 
-        final boolean setLayoutDirection(int layoutDirection, int currentIndex) {
+        final boolean setLayoutDirection(@View.ResolvedLayoutDir int layoutDirection, int currentIndex) {
             boolean changed = false;
 
             // No need to call createAllFutures, since future drawables will

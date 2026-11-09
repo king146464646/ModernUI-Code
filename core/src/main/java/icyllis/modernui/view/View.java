@@ -1,19 +1,19 @@
 /*
- * Modern UI.
- * Copyright (C) 2020-2025 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2020-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  *
  * This file incorporates work covered by the following copyright and
  * permission notice:
@@ -41,6 +41,7 @@ import icyllis.modernui.animation.AnimationUtils;
 import icyllis.modernui.animation.StateListAnimator;
 import icyllis.modernui.annotation.AttrRes;
 import icyllis.modernui.annotation.CallSuper;
+import icyllis.modernui.annotation.ColorLong;
 import icyllis.modernui.annotation.NonNull;
 import icyllis.modernui.annotation.Nullable;
 import icyllis.modernui.annotation.StyleRes;
@@ -54,6 +55,7 @@ import icyllis.modernui.graphics.drawable.Drawable;
 import icyllis.modernui.graphics.drawable.ShapeDrawable;
 import icyllis.modernui.graphics.pipeline.AlphaFilterCanvas;
 import icyllis.modernui.graphics.pipeline.ArcCanvas;
+import icyllis.modernui.graphics.pipeline.DrawShadowUtils;
 import icyllis.modernui.resources.ResourceId;
 import icyllis.modernui.resources.TypedArray;
 import icyllis.modernui.resources.TypedValue;
@@ -133,7 +135,7 @@ import static icyllis.modernui.util.Log.LOGGER;
  * {@link #setVisibility(int)}.</li>
  * </ul>
  * <p><em>
- * Note: Modern UI view system is responsible for measuring, laying out and
+ * Note: ModernUI view system is responsible for measuring, laying out and
  * drawing views. You should not call methods that perform these actions on
  * views yourself unless you are actually implementing a {@link ViewGroup}.
  * </em></p>
@@ -2897,6 +2899,8 @@ public class View implements Drawable.Callback {
         // to call invalidate() successfully when doing animations
         mPrivateFlags |= PFLAG_DRAWN;
 
+        mRenderNode.setClipToBounds(clip);
+
         if (clip && childHasIdentityMatrix &&
                 canvas.quickReject(mLeft, mTop, mRight, mBottom)) {
             // quick rejected
@@ -2983,6 +2987,7 @@ public class View implements Drawable.Callback {
      * @param canvas the canvas to draw content
      */
     @CallSuper
+    @MustBeInvokedByOverriders
     public void draw(@NonNull Canvas canvas) {
         drawBackground(canvas);
 
@@ -3162,12 +3167,12 @@ public class View implements Drawable.Callback {
                 cache.mState = ScrollCache.OFF;
                 return;
             } else {
-                int alpha = 255 - (int) (fraction * 255);
+                float alpha = 1.0f - fraction;
                 cache.mScrollBar.mutate().setAlpha(alpha);
             }
             invalidate = true;
         } else {
-            cache.mScrollBar.mutate().setAlpha(255);
+            cache.mScrollBar.mutate().setAlpha(1.0f);
         }
 
         final boolean drawHorizontalScrollBar = isHorizontalScrollBarEnabled();
@@ -3330,7 +3335,8 @@ public class View implements Drawable.Callback {
             int newHeight = bottom - top;
             boolean sizeChanged = (newWidth != oldWidth) || (newHeight != oldHeight);
 
-            invalidate();
+            // Invalidate our old position
+            invalidate(sizeChanged);
 
             mLeft = left;
             mTop = top;
@@ -3351,7 +3357,10 @@ public class View implements Drawable.Callback {
                 // before this call to setFrame came in, thereby clearing
                 // the DRAWN bit.
                 mPrivateFlags |= PFLAG_DRAWN;
-                invalidate();
+                invalidate(sizeChanged);
+                // parent display list may need to be recreated based on a change in the bounds
+                // of any child
+                invalidateParentCaches();
             }
 
             // Reset drawn bit to original value (invalidate turns it off)
@@ -4483,16 +4492,36 @@ public class View implements Drawable.Callback {
      * {@link #postInvalidate()}.
      */
     public void invalidate() {
-        invalidateInternal(0, 0, mRight - mLeft, mBottom - mTop, true, true);
+        invalidate(true);
     }
 
-    public void invalidate(Rect dirty) {
+    /**
+     * @hidden
+     */
+    public void invalidate(boolean invalidateCache) {
+        float z = getZ();
+        if (z > 0 && !mRenderNode.getOutline().isEmpty()) {
+            //TODO not an ideal solution
+            int inset = (int) Math.ceil(z * DrawShadowUtils.kOutsetPerZ * 2); // double it
+            invalidateInternal(-inset, -inset, mRight - mLeft + inset, mBottom - mTop + inset, invalidateCache, true);
+        } else {
+            invalidateInternal(0, 0, mRight - mLeft, mBottom - mTop, invalidateCache, true);
+        }
+    }
+
+    /**
+     * @hidden
+     */
+    public void invalidate(@NonNull Rect dirty) {
         final int scrollX = mScrollX;
         final int scrollY = mScrollY;
         invalidateInternal(dirty.left - scrollX, dirty.top - scrollY,
                 dirty.right - scrollX, dirty.bottom - scrollY, true, false);
     }
 
+    /**
+     * @hidden
+     */
     public void invalidate(int l, int t, int r, int b) {
         final int scrollX = mScrollX;
         final int scrollY = mScrollY;
@@ -4531,6 +4560,25 @@ public class View implements Drawable.Callback {
                 damage.set(l, t, r, b);
                 p.invalidateChild(this, damage);
             }
+        }
+    }
+
+    void invalidateViewProperty(boolean invalidateParent, boolean forceRedraw) {
+        if (invalidateParent) {
+            invalidateParentCaches();
+        }
+        if (forceRedraw) {
+            mPrivateFlags |= PFLAG_DRAWN; // force another invalidation with the new transformation
+        }
+        invalidate(false);
+    }
+
+    /**
+     * @hidden
+     */
+    protected void invalidateParentCaches() {
+        if (mParent instanceof View) {
+            ((View) mParent).mPrivateFlags |= PFLAG_INVALIDATED;
         }
     }
 
@@ -5357,6 +5405,7 @@ public class View implements Drawable.Callback {
      *                              from (in addition to direction).  Will be <code>null</code> otherwise.
      */
     @CallSuper
+    @MustBeInvokedByOverriders
     protected void onFocusChanged(boolean gainFocus, @FocusDirection int direction,
                                   @Nullable Rect previouslyFocusedRect) {
         if (!gainFocus) {
@@ -6033,6 +6082,7 @@ public class View implements Drawable.Callback {
             int oldY = mScrollY;
             mScrollX = x;
             mScrollY = y;
+            invalidateParentCaches();
             onScrollChanged(mScrollX, mScrollY, oldX, oldY);
             if (!awakenScrollBars()) {
                 postInvalidateOnAnimation();
@@ -7599,6 +7649,29 @@ public class View implements Drawable.Callback {
         return matrix == null || matrix.isIdentity();
     }
 
+    private static void sanitizeFloatPropertyValue(float value, String propertyName) {
+        sanitizeFloatPropertyValue(value, propertyName, -Float.MAX_VALUE, Float.MAX_VALUE);
+    }
+
+    private static void sanitizeFloatPropertyValue(float value, String propertyName,
+                                                   float min, float max) {
+        if (value >= min && value <= max) return;
+
+        if (value < min) {
+            throw new IllegalArgumentException("Cannot set '" + propertyName + "' to "
+                    + value + ", the value must be >= " + min);
+        }
+
+        if (value > max) {
+            throw new IllegalArgumentException("Cannot set '" + propertyName + "' to "
+                    + value + ", the value must be <= " + max);
+        }
+
+        // NaN case
+        throw new IllegalArgumentException(
+                "Cannot set '" + propertyName + "' to " + value);
+    }
+
     /**
      * The visual x position of this view, in pixels. This is equivalent to the
      * {@link #setTranslationX(float) translationX} property plus the current
@@ -7678,9 +7751,11 @@ public class View implements Drawable.Callback {
      * Sets the base elevation of this view, in pixels.
      */
     public void setElevation(float elevation) {
-        if (mRenderNode.setElevation(elevation)) {
-            invalidate();
-            mPrivateFlags |= PFLAG_DRAWN;
+        if (elevation != getElevation()) {
+            sanitizeFloatPropertyValue(elevation, "elevation");
+            invalidateViewProperty(true, false);
+            mRenderNode.setElevation(elevation);
+            invalidateViewProperty(false, true);
         }
     }
 
@@ -7704,8 +7779,10 @@ public class View implements Drawable.Callback {
      *                     in pixels.
      */
     public void setTranslationX(float translationX) {
-        if (mRenderNode.setTranslationX(translationX)) {
-            invalidate();
+        if (translationX != getTranslationX()) {
+            invalidateViewProperty(true, false);
+            mRenderNode.setTranslationX(translationX);
+            invalidateViewProperty(false, true);
         }
     }
 
@@ -7730,8 +7807,10 @@ public class View implements Drawable.Callback {
      *                     in pixels.
      */
     public void setTranslationY(float translationY) {
-        if (mRenderNode.setTranslationY(translationY)) {
-            invalidate();
+        if (translationY != getTranslationY()) {
+            invalidateViewProperty(true, false);
+            mRenderNode.setTranslationY(translationY);
+            invalidateViewProperty(false, true);
         }
     }
 
@@ -7748,8 +7827,85 @@ public class View implements Drawable.Callback {
      * Sets the depth location of this view relative to its {@link #getElevation() elevation}.
      */
     public void setTranslationZ(float translationZ) {
-        if (mRenderNode.setTranslationZ(translationZ)) {
-            invalidate();
+        if (translationZ != getTranslationZ()) {
+            sanitizeFloatPropertyValue(translationZ, "translationZ");
+            invalidateViewProperty(true, false);
+            mRenderNode.setTranslationZ(translationZ);
+            invalidateViewProperty(false, true);
+        }
+    }
+
+    /**
+     * Gets the distance along the Z axis from the camera to this view.
+     *
+     * @see #setCameraDistance(float)
+     *
+     * @return The distance along the Z axis, in pixels
+     * @since 3.13
+     */
+    public float getCameraDistance() {
+        return mRenderNode.getCameraDistance();
+    }
+
+    /**
+     * <p>Sets the distance along the Z axis (orthogonal to the X/Y plane on which
+     * views are drawn) from the camera to this view. The camera's distance
+     * affects 3D transformations, for instance rotations around the X and Y
+     * axis. If the rotationX or rotationY properties are changed and this view is
+     * large (more than half the size of the screen), it is recommended to always
+     * use a camera distance that's greater than the height (X axis rotation) or
+     * the width (Y axis rotation) of this view.</p>
+     *
+     * <p>The distance of the camera from the view plane can have an affect on the
+     * perspective distortion of the view when it is rotated around the x or y axis.
+     * For example, a large distance will result in a large viewing angle, and there
+     * will not be much perspective distortion of the view as it rotates. A short
+     * distance may cause much more perspective distortion upon rotation, and can
+     * also result in some drawing artifacts if the rotated view ends up partially
+     * behind the camera (which is why the recommendation is to use a distance at
+     * least as far as the size of the view, if the view is to be rotated.)</p>
+     *
+     * <p>The distance is expressed in pixels. The default distance depends
+     * on the view's largest dimension. For instance, for a view with a size of
+     * 1920x1080 pixels, the default distance is 1920 pixels. This value varies with
+     * width/height, and once you call this method, the camera distance will be
+     * fixed at the value you specify, unless {@link #resetCameraDistance()} is called.</p>
+     *
+     * @param distance the distance in pixels, should be positive
+     *
+     * @see #setRotationX(float)
+     * @see #setRotationY(float)
+     * @since 3.13
+     */
+    public void setCameraDistance(float distance) {
+        invalidateViewProperty(true, false);
+        mRenderNode.setCameraDistance(Math.abs(distance));
+        invalidateViewProperty(false, true); // should invalidate again with forceRedraw...
+    }
+
+    /**
+     * Returns whether a camera distance has been set by a call to {@link #setCameraDistance(float)} or
+     * If no camera distance has been set then the distance will be the max(width,height) of the view.
+     *
+     * @return True if a camera distance has been set, false if the default distance is being used
+     * @since 3.13
+     */
+    public boolean isCameraDistanceSet() {
+        return mRenderNode.isCameraDistanceExplicitlySet();
+    }
+
+    /**
+     * Clears any camera distance previously set by a call to {@link #setCameraDistance(float)}.
+     * After calling this {@link #isCameraDistanceSet()} will be false and the camera
+     * distance used for rotation will return to default to the max(width,height) of the view.
+     *
+     * @since 3.13
+     */
+    public void resetCameraDistance() {
+        if (mRenderNode.isCameraDistanceExplicitlySet()) {
+            invalidateViewProperty(true, false);
+            mRenderNode.resetCameraDistance();
+            invalidateViewProperty(false, true);
         }
     }
 
@@ -7777,8 +7933,11 @@ public class View implements Drawable.Callback {
      * @see #setRotationY(float)
      */
     public void setRotation(float rotation) {
-        if (mRenderNode.setRotationZ(rotation)) {
-            invalidate();
+        if (rotation != getRotation()) {
+            // Double-invalidation is necessary to capture view's old and new areas
+            invalidateViewProperty(true, false);
+            mRenderNode.setRotationZ(rotation);
+            invalidateViewProperty(false, true);
         }
     }
 
@@ -7807,8 +7966,10 @@ public class View implements Drawable.Callback {
      * @see #setRotationX(float)
      */
     public void setRotationY(float rotationY) {
-        if (mRenderNode.setRotationY(rotationY)) {
-            invalidate();
+        if (rotationY != getRotationY()) {
+            invalidateViewProperty(true, false);
+            mRenderNode.setRotationY(rotationY);
+            invalidateViewProperty(false, true);
         }
     }
 
@@ -7837,8 +7998,10 @@ public class View implements Drawable.Callback {
      * @see #setRotationY(float)
      */
     public void setRotationX(float rotationX) {
-        if (mRenderNode.setRotationX(rotationX)) {
-            invalidate();
+        if (rotationX != getRotationX()) {
+            invalidateViewProperty(true, false);
+            mRenderNode.setRotationX(rotationX);
+            invalidateViewProperty(false, true);
         }
     }
 
@@ -7865,8 +8028,11 @@ public class View implements Drawable.Callback {
      * @see #getPivotY()
      */
     public void setScaleX(float scaleX) {
-        if (mRenderNode.setScaleX(scaleX)) {
-            invalidate();
+        if (scaleX != getScaleX()) {
+            sanitizeFloatPropertyValue(scaleX, "scaleX");
+            invalidateViewProperty(true, false);
+            mRenderNode.setScaleX(scaleX);
+            invalidateViewProperty(false, true);
         }
     }
 
@@ -7893,8 +8059,11 @@ public class View implements Drawable.Callback {
      * @see #getPivotY()
      */
     public void setScaleY(float scaleY) {
-        if (mRenderNode.setScaleY(scaleY)) {
-            invalidate();
+        if (scaleY != getScaleY()) {
+            sanitizeFloatPropertyValue(scaleY, "scaleY");
+            invalidateViewProperty(true, false);
+            mRenderNode.setScaleY(scaleY);
+            invalidateViewProperty(false, true);
         }
     }
 
@@ -7926,8 +8095,10 @@ public class View implements Drawable.Callback {
      * @see #getPivotY()
      */
     public void setPivotX(float pivotX) {
-        if (mRenderNode.setPivotX(pivotX)) {
-            invalidate();
+        if (!mRenderNode.isPivotExplicitlySet() || pivotX != getPivotX()) {
+            invalidateViewProperty(true, false);
+            mRenderNode.setPivotX(pivotX);
+            invalidateViewProperty(false, true);
         }
     }
 
@@ -7958,8 +8129,10 @@ public class View implements Drawable.Callback {
      * @see #getPivotY()
      */
     public void setPivotY(float pivotY) {
-        if (mRenderNode.setPivotY(pivotY)) {
-            invalidate();
+        if (!mRenderNode.isPivotExplicitlySet() || pivotY != getPivotY()) {
+            invalidateViewProperty(true, false);
+            mRenderNode.setPivotY(pivotY);
+            invalidateViewProperty(false, true);
         }
     }
 
@@ -7980,8 +8153,10 @@ public class View implements Drawable.Callback {
      * and the pivot used for rotation will return to default of being centered on the view.
      */
     public void resetPivot() {
-        if (mRenderNode.resetPivot()) {
-            invalidate();
+        if (mRenderNode.isPivotExplicitlySet()) {
+            invalidateViewProperty(true, false);
+            mRenderNode.resetPivot();
+            invalidateViewProperty(false, true); // should invalidate again with forceRedraw...
         }
     }
 
@@ -8051,12 +8226,37 @@ public class View implements Drawable.Callback {
         return true;
     }
 
-    //TODO WIP
+    /**
+     * Invoked if there is a Transform that involves alpha. Subclass that can
+     * draw themselves with the specified alpha should return true, and then
+     * respect that alpha when their onDraw() is called. If this returns false
+     * then the view may be redirected to draw into an offscreen buffer to
+     * fulfill the request, which will look fine, but may be slower than if the
+     * subclass handles it internally. The default implementation returns false.
+     *
+     * @param alpha The alpha (0..1) to apply to the view's drawing
+     * @return true if the view can draw with the specified alpha.
+     */
+    @ApiStatus.Experimental
+    //TODO not supported everywhere
+    protected boolean onSetAlpha(float alpha) {
+        return false;
+    }
+
+    //TODO WIP handle overlapping correctly, by introducing dedicated compositing layer
     public void setAlpha(float alpha) {
         if (mAlpha != alpha) {
             mAlpha = alpha;
-            invalidate();
-            mRenderNode.setAlpha(mAlpha * mTransitionAlpha);
+            if (onSetAlpha(alpha)) {
+                mPrivateFlags |= PFLAG_ALPHA_SET;
+                // subclass is handling alpha - don't optimize rendering cache invalidation
+                invalidateParentCaches();
+                invalidate(true);
+            } else {
+                mPrivateFlags &= ~PFLAG_ALPHA_SET;
+                invalidateViewProperty(true, false);
+                mRenderNode.setAlpha(mAlpha * mTransitionAlpha);
+            }
         }
     }
 
@@ -8070,7 +8270,8 @@ public class View implements Drawable.Callback {
     public final void setTransitionAlpha(float alpha) {
         if (mTransitionAlpha != alpha) {
             mTransitionAlpha = alpha;
-            invalidate();
+            mPrivateFlags &= ~PFLAG_ALPHA_SET;
+            invalidateViewProperty(true, false);
             mRenderNode.setAlpha(mAlpha * mTransitionAlpha);
         }
     }
@@ -8097,6 +8298,8 @@ public class View implements Drawable.Callback {
      * @param matrix The matrix, null indicates that the matrix should be cleared.
      * @see #getAnimationMatrix()
      */
+    //TODO not well supported, such invalidation, damage accumulation...
+    @ApiStatus.Experimental
     public final void setAnimationMatrix(@Nullable Matrix matrix) {
         mRenderNode.setAnimationMatrix(matrix);
     }
@@ -8124,11 +8327,11 @@ public class View implements Drawable.Callback {
      * and the view will draw normally, using its full bounds.
      *
      * @param clipBounds The rectangular area, in the local coordinates of
-     * this view, to which future drawing operations will be clipped.
+     *                   this view, to which future drawing operations will be clipped.
      */
     public void setClipBounds(@Nullable Rect clipBounds) {
         if (mRenderNode.setClipBounds(clipBounds)) {
-            invalidate();
+            invalidateViewProperty(false, false);
         }
     }
 
@@ -8153,7 +8356,7 @@ public class View implements Drawable.Callback {
      *
      * @param outRect rectangle in which to place the clip bounds of the view
      * @return {@code true} if successful or {@code false} if the view's
-     *         clip bounds are {@code null}
+     * clip bounds are {@code null}
      */
     public boolean getClipBounds(@NonNull Rect outRect) {
         if ((mRenderNode.getClippingFlags() & RenderProperties.CLIP_TO_CLIP_BOUNDS) != 0) {
@@ -8239,7 +8442,7 @@ public class View implements Drawable.Callback {
     public void invalidateOutline() {
         rebuildOutline();
 
-        invalidate();
+        invalidateViewProperty(false, false);
     }
 
     /**
@@ -8266,6 +8469,62 @@ public class View implements Drawable.Callback {
             mOutlineProvider.getOutline(this, outline);
             mRenderNode.setOutline(outline);
         }
+    }
+
+    /**
+     * Sets the color of the spot shadow that is drawn when the view has a positive Z or
+     * elevation value.
+     * <p>
+     * By default the shadow color is black. Generally, this color will be opaque so the intensity
+     * of the shadow is consistent between different views with different colors.
+     * <p>
+     * The opacity of the final spot shadow is a function of the shadow caster height, the
+     * alpha channel of the outlineSpotShadowColor (typically opaque), and the
+     * parent's {@link ViewGroup#getSpotShadowAlpha()}.
+     *
+     * @param color The color this View will cast for its elevation spot shadow.
+     * @since 3.13
+     */
+    public void setOutlineSpotShadowColor(@ColorLong long color) {
+        if (mRenderNode.setSpotShadowColor(color)) {
+            invalidateViewProperty(true, true);
+        }
+    }
+
+    /**
+     * @return The shadow color set by {@link #setOutlineSpotShadowColor(long)}, or black if nothing
+     * was set
+     */
+    public @ColorLong long getOutlineSpotShadowColor() {
+        return mRenderNode.getSpotShadowColor();
+    }
+
+    /**
+     * Sets the color of the ambient shadow that is drawn when the view has a positive Z or
+     * elevation value.
+     * <p>
+     * By default the shadow color is black. Generally, this color will be opaque so the intensity
+     * of the shadow is consistent between different views with different colors.
+     * <p>
+     * The opacity of the final ambient shadow is a function of the shadow caster height, the
+     * alpha channel of the outlineAmbientShadowColor (typically opaque), and the
+     * parent's {@link ViewGroup#getAmbientShadowAlpha()}.
+     *
+     * @param color The color this View will cast for its elevation shadow.
+     * @since 3.13
+     */
+    public void setOutlineAmbientShadowColor(@ColorLong long color) {
+        if (mRenderNode.setAmbientShadowColor(color)) {
+            invalidateViewProperty(true, true);
+        }
+    }
+
+    /**
+     * @return The shadow color set by {@link #setOutlineAmbientShadowColor(long)}, or black if
+     * nothing was set
+     */
+    public @ColorLong long getOutlineAmbientShadowColor() {
+        return mRenderNode.getAmbientShadowColor();
     }
 
     /**
@@ -8387,8 +8646,8 @@ public class View implements Drawable.Callback {
      *
      * @see #onDetachedFromWindow()
      */
-    @MustBeInvokedByOverriders
     @CallSuper
+    @MustBeInvokedByOverriders
     protected void onAttachedToWindow() {
         mPrivateFlags3 &= ~PFLAG3_IS_LAID_OUT;
 
@@ -9461,6 +9720,7 @@ public class View implements Drawable.Callback {
      * handle possible request-during-layout errors correctly.</p>
      */
     @CallSuper
+    @MustBeInvokedByOverriders
     public void requestLayout() {
         if (mMeasureCache != null) mMeasureCache.clear();
 
@@ -9522,6 +9782,7 @@ public class View implements Drawable.Callback {
      * @param y hotspot y coordinate
      */
     @CallSuper
+    @MustBeInvokedByOverriders
     public void drawableHotspotChanged(float x, float y) {
         if (mBackground != null) {
             mBackground.setHotspot(x, y);
@@ -9842,6 +10103,7 @@ public class View implements Drawable.Callback {
      * @see #drawableStateChanged()
      */
     @CallSuper
+    @MustBeInvokedByOverriders
     protected boolean verifyDrawable(@NonNull Drawable drawable) {
         // Avoid verifying the scroll bar drawable so that we don't end up in
         // an invalidation loop. This effectively prevents the scroll bar
@@ -9862,6 +10124,7 @@ public class View implements Drawable.Callback {
      * @see Drawable#setState(int[])
      */
     @CallSuper
+    @MustBeInvokedByOverriders
     protected void drawableStateChanged() {
         final int[] state = getDrawableState();
         boolean changed = false;
@@ -10020,6 +10283,7 @@ public class View implements Drawable.Callback {
      * attached to this view.
      */
     @CallSuper
+    @MustBeInvokedByOverriders
     public void jumpDrawablesToCurrentState() {
         if (mBackground != null) {
             mBackground.jumpToCurrentState();
@@ -11005,6 +11269,7 @@ public class View implements Drawable.Callback {
      *                  and this view's window is also visible
      */
     @CallSuper
+    @MustBeInvokedByOverriders
     public void onVisibilityAggregated(boolean isVisible) {
         // Update our internal visibility tracking so we can detect changes
         boolean oldVisible = isAggregatedVisible();
@@ -12428,6 +12693,7 @@ public class View implements Drawable.Callback {
      * a container View.
      */
     @CallSuper
+    @MustBeInvokedByOverriders
     public void dispatchStartTemporaryDetach() {
         mPrivateFlags3 |= PFLAG3_TEMPORARY_DETACH;
         onStartTemporaryDetach();
@@ -12449,6 +12715,7 @@ public class View implements Drawable.Callback {
      * a container View.
      */
     @CallSuper
+    @MustBeInvokedByOverriders
     public void dispatchFinishTemporaryDetach() {
         mPrivateFlags3 &= ~PFLAG3_TEMPORARY_DETACH;
         onFinishTemporaryDetach();
@@ -12569,7 +12836,7 @@ public class View implements Drawable.Callback {
                 }
             }
         }
-        // Modern UI added: context menu
+        // ModernUI added: context menu
         if (keyCode == KeyEvent.KEY_MENU) {
             if ((mViewFlags & ENABLED_MASK) == DISABLED) {
                 return true;
@@ -12695,10 +12962,36 @@ public class View implements Drawable.Callback {
      */
     public void offsetTopAndBottom(int offset) {
         if (offset != 0) {
+            final boolean matrixIsIdentity = hasIdentityMatrix();
+            if (matrixIsIdentity) {
+                final ViewParent p = mParent;
+                if (p != null && mAttachInfo != null) {
+                    final Rect r = mAttachInfo.mTmpInvalRect;
+                    int minTop;
+                    int maxBottom;
+                    int yLoc;
+                    if (offset < 0) {
+                        minTop = mTop + offset;
+                        maxBottom = mBottom;
+                        yLoc = offset;
+                    } else {
+                        minTop = mTop;
+                        maxBottom = mBottom + offset;
+                        yLoc = 0;
+                    }
+                    r.set(0, yLoc, mRight - mLeft, maxBottom - minTop);
+                    p.invalidateChild(this, r);
+                }
+            } else {
+                invalidateViewProperty(false, false);
+            }
+
             mTop += offset;
             mBottom += offset;
             mRenderNode.offsetTopAndBottom(offset);
-            invalidate();
+            if (!matrixIsIdentity) {
+                invalidateViewProperty(false, true);
+            }
         }
     }
 
@@ -12709,10 +13002,33 @@ public class View implements Drawable.Callback {
      */
     public void offsetLeftAndRight(int offset) {
         if (offset != 0) {
+            final boolean matrixIsIdentity = hasIdentityMatrix();
+            if (matrixIsIdentity) {
+                final ViewParent p = mParent;
+                if (p != null && mAttachInfo != null) {
+                    final Rect r = mAttachInfo.mTmpInvalRect;
+                    int minLeft;
+                    int maxRight;
+                    if (offset < 0) {
+                        minLeft = mLeft + offset;
+                        maxRight = mRight;
+                    } else {
+                        minLeft = mLeft;
+                        maxRight = mRight + offset;
+                    }
+                    r.set(0, 0, maxRight - minLeft, mBottom - mTop);
+                    p.invalidateChild(this, r);
+                }
+            } else {
+                invalidateViewProperty(false, false);
+            }
+
             mLeft += offset;
             mRight += offset;
             mRenderNode.offsetLeftAndRight(offset);
-            invalidate();
+            if (!matrixIsIdentity) {
+                invalidateViewProperty(false, true);
+            }
         }
     }
 
@@ -12788,7 +13104,7 @@ public class View implements Drawable.Callback {
                 mTooltipInfo.clearAnchorPos();
             }
             mTooltipInfo.mTooltipText = tooltipText;
-            // Modern UI changed: Reshow
+            // ModernUI changed: Reshow
             if (mTooltipInfo.mTooltipPopup != null && !mTooltipInfo.mTooltipFromLongClick) {
                 hideTooltip();
                 // Schedule showing the tooltip after a timeout.
@@ -12854,7 +13170,7 @@ public class View implements Drawable.Callback {
     }
 
     private boolean showLongClickTooltip(int x, int y) {
-        // Modern UI changed: long click timeout is always longer than hover tooltip timeout,
+        // ModernUI changed: long click timeout is always longer than hover tooltip timeout,
         // so this is not necessary (actually dead code)
         if (mTooltipInfo != null && mTooltipInfo.mTooltipPopup == null) {
             removeCallbacks(mTooltipInfo.mShowTooltipRunnable);

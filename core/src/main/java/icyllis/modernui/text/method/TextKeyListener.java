@@ -1,19 +1,19 @@
 /*
- * Modern UI.
- * Copyright (C) 2019-2021 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2019-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package icyllis.modernui.text.method;
@@ -223,7 +223,7 @@ public final class TextKeyListener {
     private boolean backspaceOrForwardDelete(TextView view, Editable content,
                                              KeyEvent event, boolean isForwardDelete) {
         // Ensure the key event does not have modifiers except ALT or SHIFT or CTRL.
-        if ((event.getModifiers() & ~(KeyEvent.META_SHIFT_ON | KeyEvent.META_ALT_ON | KeyEvent.META_CTRL_ON)) != 0) {
+        if ((event.getModifiers() & ~(KeyEvent.META_SHIFT_ON | KeyEvent.META_ALT_ON | KeyEvent.META_SHORTCUT_ON)) != 0) {
             return false;
         }
 
@@ -233,20 +233,28 @@ public final class TextKeyListener {
         }
 
         // MetaKeyKeyListener doesn't track control key state. Need to check the KeyEvent instead.
-        boolean isCtrlActive = event.isCtrlPressed();
         boolean isShiftActive = event.isShiftPressed();
-        boolean isAltActive = event.isAltPressed();
 
-        if (isCtrlActive) {
-            if (isAltActive || isShiftActive) {
-                // Ctrl+Alt, Ctrl+Shift, Ctrl+Alt+Shift should not delete any characters.
-                return false;
+        if (KeyEvent.IS_MACOS) {
+            if (event.isAltPressed()) {
+                if (isShiftActive || event.isSuperPressed()) {
+                    // Option+Cmd, Option+Shift, Option+Shift+Cmd should not delete any characters.
+                    return false;
+                }
+                return deleteUntilWordBoundary(view, content, isForwardDelete);
             }
-            return deleteUntilWordBoundary(view, content, isForwardDelete);
+        } else {
+            if (event.isControlPressed()) {
+                if (event.isAltPressed() || isShiftActive) {
+                    // Ctrl+Alt, Ctrl+Shift, Ctrl+Alt+Shift should not delete any characters.
+                    return false;
+                }
+                return deleteUntilWordBoundary(view, content, isForwardDelete);
+            }
         }
 
-        // Alt+Backspace or Alt+ForwardDelete deletes the current line, if possible.
-        if (isAltActive && deleteLine(view, content)) {
+        // (Cmd/Alt)+Backspace or (Cmd/Alt)+ForwardDelete deletes the current line, if possible.
+        if ((KeyEvent.IS_MACOS ? event.isSuperPressed() : event.isAltPressed()) && deleteLine(view, content)) {
             return true;
         }
 

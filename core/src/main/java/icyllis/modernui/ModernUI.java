@@ -1,25 +1,26 @@
 /*
- * Modern UI.
- * Copyright (C) 2019-2024 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2019-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package icyllis.modernui;
 
 import icyllis.arc3d.core.ColorInfo;
 import icyllis.arc3d.core.ColorSpace;
+import icyllis.arc3d.core.ColorSpaces;
 import icyllis.arc3d.core.ImageInfo;
 import icyllis.arc3d.core.RefCnt;
 import icyllis.arc3d.engine.Engine;
@@ -47,8 +48,6 @@ import icyllis.modernui.fragment.FragmentHostCallback;
 import icyllis.modernui.fragment.FragmentTransaction;
 import icyllis.modernui.fragment.OnBackPressedDispatcher;
 import icyllis.modernui.fragment.OnBackPressedDispatcherOwner;
-import icyllis.modernui.graphics.Bitmap;
-import icyllis.modernui.graphics.BitmapFactory;
 import icyllis.modernui.graphics.Canvas;
 import icyllis.modernui.graphics.Image;
 import icyllis.modernui.graphics.LightingInfo;
@@ -63,8 +62,6 @@ import icyllis.modernui.lifecycle.ViewModelStore;
 import icyllis.modernui.lifecycle.ViewModelStoreOwner;
 import icyllis.modernui.resources.ResourceId;
 import icyllis.modernui.resources.Resources;
-import icyllis.modernui.resources.ResourcesBuilder;
-import icyllis.modernui.resources.SystemTheme;
 import icyllis.modernui.resources.TypedValue;
 import icyllis.modernui.text.Typeface;
 import icyllis.modernui.util.DisplayMetrics;
@@ -88,11 +85,6 @@ import org.lwjgl.opengl.GL33C;
 import org.lwjgl.system.Configuration;
 import org.lwjgl.system.Platform;
 
-import java.io.FileNotFoundException;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.channels.Channels;
-import java.nio.channels.ReadableByteChannel;
 import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Objects;
@@ -108,7 +100,7 @@ import static icyllis.modernui.core.Core.MARKER;
 import static icyllis.modernui.util.Log.LOGGER;
 
 /**
- * The core class of Modern UI.
+ * The core class of ModernUI.
  */
 public class ModernUI extends Activity implements AutoCloseable, LifecycleOwner {
 
@@ -165,15 +157,13 @@ public class ModernUI extends Activity implements AutoCloseable, LifecycleOwner 
                 throw new RuntimeException("Multiple instances");
             }
         }
-        ResourcesBuilder rb = new ResourcesBuilder();
-        SystemTheme.addToResources(rb);
-        mResources = rb.build();
+        mResources = Resources.getSystem();
     }
 
     /**
-     * Get Modern UI instance.
+     * Get ModernUI instance.
      *
-     * @return the Modern UI
+     * @return the ModernUI
      */
     public static ModernUI getInstance() {
         return sInstance;
@@ -207,7 +197,7 @@ public class ModernUI extends Activity implements AutoCloseable, LifecycleOwner 
     }
 
     /**
-     * Runs the Modern UI with the default application setups.
+     * Runs the ModernUI with the default application setups.
      * This method is only called by the <code>main()</code> on the main thread.
      */
     @MainThread
@@ -216,7 +206,7 @@ public class ModernUI extends Activity implements AutoCloseable, LifecycleOwner 
     }
 
     /**
-     * Runs the Modern UI with the default application setups.
+     * Runs the ModernUI with the default application setups.
      * This method is only called by the <code>main()</code> on the main thread.
      *
      * @hidden
@@ -272,10 +262,10 @@ public class ModernUI extends Activity implements AutoCloseable, LifecycleOwner 
         //glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
         if (monitor == null) {
             LOGGER.info(MARKER, "No monitor connected");
-            mWindow = ActivityWindow.createMainWindow("Modern UI", 1280, 720);
+            mWindow = ActivityWindow.createMainWindow("ModernUI", 1280, 720);
         } else {
             VideoMode mode = monitor.getCurrentMode();
-            mWindow = ActivityWindow.createMainWindow("Modern UI",
+            mWindow = ActivityWindow.createMainWindow("ModernUI",
                     (int) (mode.getWidth() * 0.75), (int) (mode.getHeight() * 0.75));
         }
 
@@ -289,7 +279,7 @@ public class ModernUI extends Activity implements AutoCloseable, LifecycleOwner 
             windowCallback.accept(mWindow.getHandle());
         }
 
-        CompletableFuture.supplyAsync(() -> {
+        /*CompletableFuture.supplyAsync(() -> {
             try {
                 Bitmap i16 = BitmapFactory.decodeStream(getResourceStream(ID, "AppLogo16x.png"));
                 Bitmap i32 = BitmapFactory.decodeStream(getResourceStream(ID, "AppLogo32x.png"));
@@ -299,7 +289,7 @@ public class ModernUI extends Activity implements AutoCloseable, LifecycleOwner 
                 LOGGER.info(MARKER, "Failed to load window icons", e);
             }
             return null;
-        }).thenAcceptAsync(icons -> mWindow.setIcon(icons), Core.getMainThreadExecutor());
+        }).thenAcceptAsync(icons -> mWindow.setIcon(icons), Core.getMainThreadExecutor());*/
 
         if (monitor != null) {
             mWindow.center(monitor);
@@ -321,7 +311,7 @@ public class ModernUI extends Activity implements AutoCloseable, LifecycleOwner 
             metrics.densityDpi = density;
             metrics.scaledDensity = metrics.density;
             LOGGER.info(MARKER, "Display metrics: {}", metrics);
-            mResources.updateMetrics(metrics);
+            mResources.updateConfiguration(null, metrics);
         }
 
         glfwSetWindowCloseCallback(mWindow.getHandle(), new GLFWWindowCloseCallback() {
@@ -372,8 +362,7 @@ public class ModernUI extends Activity implements AutoCloseable, LifecycleOwner 
         }, Core.getUiThreadExecutor());*/
         TypedValue value = new TypedValue();
         getTheme().resolveAttribute(R.ns, R.attr.colorSurfaceContainerLowest, value, true);
-        int colorSurfaceContainerLowest = value.data;
-        mDecor.setBackground(new ColorDrawable(colorSurfaceContainerLowest));
+        mDecor.setBackground(getResources().loadDrawable(value, null, getTheme()));
 
         mFragmentContainerView = new FragmentContainerView(this);
         mFragmentContainerView.setLayoutParams(new WindowManager.LayoutParams());
@@ -591,22 +580,6 @@ public class ModernUI extends Activity implements AutoCloseable, LifecycleOwner 
         return true;
     }
 
-    @ApiStatus.Experimental
-    @NonNull
-    public InputStream getResourceStream(@NonNull String namespace, @NonNull String path) throws IOException {
-        InputStream stream = ModernUI.class.getResourceAsStream("/assets/" + namespace + "/" + path);
-        if (stream == null) {
-            throw new FileNotFoundException();
-        }
-        return stream;
-    }
-
-    @ApiStatus.Experimental
-    @NonNull
-    public ReadableByteChannel getResourceChannel(@NonNull String namespace, @NonNull String path) throws IOException {
-        return Channels.newChannel(getResourceStream(namespace, path));
-    }
-
     /**
      * Get the view manager of the application window (i.e. main window).
      *
@@ -691,9 +664,9 @@ public class ModernUI extends Activity implements AutoCloseable, LifecycleOwner 
                             Core.requireUiRecordingContext(),
                             ImageInfo.make(width, height,
                                     ColorInfo.CT_RGBA_8888, ColorInfo.AT_PREMUL,
-                                    ColorSpace.get(ColorSpace.Named.SRGB)),
+                                    ColorSpaces.SRGB),
                             false,
-                            Engine.SurfaceOrigin.kLowerLeft,
+                            Engine.SurfaceOrigin.kUpperLeft,
                             null
                     ));
 
@@ -762,7 +735,7 @@ public class ModernUI extends Activity implements AutoCloseable, LifecycleOwner 
             recording.close();
             if (added) {
                 GL33C.glBindFramebuffer(GL33C.GL_DRAW_FRAMEBUFFER, 0);
-                GL33C.glBlitFramebuffer(0, 0, width, height,
+                GL33C.glBlitFramebuffer(0, height, width, 0,
                         0, 0, width, height, GL33C.GL_COLOR_BUFFER_BIT,
                         GL33C.GL_NEAREST);
                 context.submit();

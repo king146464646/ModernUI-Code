@@ -1,19 +1,19 @@
 /*
- * Modern UI.
- * Copyright (C) 2025 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2025-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package icyllis.modernui.graphics.drawable;
@@ -77,7 +77,9 @@ public class RoundedImageDrawable extends Drawable {
      * the given stream after read operation has completed. The stream will be at end if
      * read operation succeeds.
      * <p>
-     * This method may only be called from UI thread.
+     * As of version 3.13.0, this method is thread-safe and can be invoked from any
+     * thread except the internal rendering thread. Prior to version 3.13.0,
+     * this method may only be called from the UI thread.
      */
     public RoundedImageDrawable(Resources res, @NonNull InputStream stream) {
         Image image = null;
@@ -143,7 +145,7 @@ public class RoundedImageDrawable extends Drawable {
         }
         if (mTargetDensity != density) {
             mTargetDensity = density;
-            // Added by Modern UI
+            // Added by ModernUI
             mDstRectDirty = true;
             invalidateSelf();
         }
@@ -354,13 +356,15 @@ public class RoundedImageDrawable extends Drawable {
                                 Shader.TileMode.CLAMP.nativeInt,
                                 paint.getFilterMode() != ImageShader.FILTER_MODE_NEAREST
                                         ? icyllis.arc3d.core.SamplingOptions.LINEAR
-                                        : icyllis.arc3d.core.SamplingOptions.POINT,
+                                        : icyllis.arc3d.core.SamplingOptions.NEAREST,
                                 updateShaderMatrix(image)
                         )
                 );
             }
+            float rad = Math.min(mCornerRadius,
+                    Math.min(mDstRect.width(), mDstRect.height()) * 0.5f);
             canvas.drawRoundRect(mDstRect.left, mDstRect.top, mDstRect.right, mDstRect.bottom,
-                    mCornerRadius, paint);
+                    rad, paint);
         }
 
         if (clearColorFilter) {
@@ -418,13 +422,15 @@ public class RoundedImageDrawable extends Drawable {
         if (updateDstRect()) {
             mDstRectDirty = true; // keep dirty to rebuild shader later
         }
-        outline.setRoundRect(mDstRect, getCornerRadius());
-        outline.setAlpha(getAlpha() / 255.0f);
+        float rad = Math.min(mCornerRadius,
+                Math.min(mDstRect.width(), mDstRect.height()) * 0.5f);
+        outline.setRoundRect(mDstRect, rad);
+        outline.setAlpha(getAlpha());
     }
 
     @Override
-    public void setAlpha(int alpha) {
-        final int oldAlpha = mPaint.getAlpha();
+    public void setAlpha(float alpha) {
+        final float oldAlpha = mPaint.getAlphaF();
         if (alpha != oldAlpha) {
             mPaint.setAlpha(alpha);
             invalidateSelf();
@@ -432,8 +438,8 @@ public class RoundedImageDrawable extends Drawable {
     }
 
     @Override
-    public int getAlpha() {
-        return mPaint.getAlpha();
+    public float getAlpha() {
+        return mPaint.getAlphaF();
     }
 
     @Override

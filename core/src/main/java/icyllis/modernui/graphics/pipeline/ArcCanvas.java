@@ -1,19 +1,19 @@
 /*
- * Modern UI.
- * Copyright (C) 2024-2025 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2024-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package icyllis.modernui.graphics.pipeline;
@@ -23,7 +23,6 @@ import icyllis.arc3d.core.RawPtr;
 import icyllis.arc3d.core.Rect2f;
 import icyllis.arc3d.core.Rect2i;
 import icyllis.arc3d.core.SamplingOptions;
-import icyllis.arc3d.sketch.ClipOp;
 import icyllis.arc3d.sketch.RRect;
 import icyllis.arc3d.sketch.TextBlob;
 import icyllis.arc3d.sketch.Vertices;
@@ -36,7 +35,11 @@ import icyllis.modernui.graphics.ImageShader;
 import icyllis.modernui.graphics.Matrix;
 import icyllis.modernui.graphics.Paint;
 import icyllis.modernui.graphics.RectF;
+import icyllis.modernui.graphics.text.CharUtils;
 import icyllis.modernui.graphics.text.Font;
+import icyllis.modernui.graphics.text.FontPaint;
+import icyllis.modernui.graphics.text.LayoutPiece;
+import icyllis.modernui.graphics.text.ShapedText;
 import org.jetbrains.annotations.ApiStatus;
 
 import java.nio.FloatBuffer;
@@ -158,13 +161,13 @@ public class ArcCanvas extends Canvas {
 
     @Override
     public boolean clipRect(float left, float top, float right, float bottom) {
-        mCanvas.clipRect(left, top, right, bottom, ClipOp.CLIP_OP_INTERSECT);
+        mCanvas.clipRect(left, top, right, bottom, icyllis.arc3d.sketch.Canvas.CLIP_OP_INTERSECT, false);
         return !mCanvas.isClipEmpty();
     }
 
     @Override
     public boolean clipOutRect(float left, float top, float right, float bottom) {
-        mCanvas.clipRect(left, top, right, bottom, ClipOp.CLIP_OP_DIFFERENCE);
+        mCanvas.clipRect(left, top, right, bottom, icyllis.arc3d.sketch.Canvas.CLIP_OP_DIFFERENCE, false);
         return !mCanvas.isClipEmpty();
     }
 
@@ -302,7 +305,7 @@ public class ArcCanvas extends Canvas {
         }
         mCanvas.drawImage(image.getNativeImage(), left, top,
                 paint != null && paint.getFilterMode() == ImageShader.FILTER_MODE_NEAREST
-                        ? SamplingOptions.POINT
+                        ? SamplingOptions.NEAREST
                         : SamplingOptions.LINEAR,
                 paint != null ? paint.getNativePaint() : null);
     }
@@ -317,7 +320,7 @@ public class ArcCanvas extends Canvas {
                 new Rect2f(srcLeft, srcTop, srcRight, srcBottom),
                 new Rect2f(dstLeft, dstTop, dstRight, dstBottom),
                 paint != null && paint.getFilterMode() == ImageShader.FILTER_MODE_NEAREST
-                        ? SamplingOptions.POINT
+                        ? SamplingOptions.NEAREST
                         : SamplingOptions.LINEAR,
                 paint != null ? paint.getNativePaint() : null,
                 icyllis.arc3d.sketch.Canvas.SRC_RECT_CONSTRAINT_FAST);
@@ -327,13 +330,17 @@ public class ArcCanvas extends Canvas {
     public void drawGlyphs(@NonNull int[] glyphs, int glyphOffset,
                            @NonNull float[] positions, int positionOffset,
                            int glyphCount, @NonNull Font font,
-                           float x, float y, @NonNull Paint paint) {
+                           float x, float y, @NonNull Paint paint,
+                           FontPaint fontPaint) {
+        if (glyphCount <= 0) {
+            return;
+        }
         var nativeFont = new icyllis.arc3d.sketch.Font();
         nativeFont.setTypeface(font.getNativeTypeface());
         if (nativeFont.getTypeface() == null) {
             return;
         }
-        paint.getNativeFont(nativeFont);
+        fontPaint.getNativeFont(nativeFont);
         mCanvas.drawGlyphs(glyphs, glyphOffset,
                 positions, positionOffset,
                 glyphCount, x, y, nativeFont, paint.getNativePaint());
@@ -342,6 +349,50 @@ public class ArcCanvas extends Canvas {
     @Override
     public void drawTextBlob(TextBlob blob, float x, float y, @NonNull Paint paint) {
         mCanvas.drawTextBlob(blob, x, y, paint.getNativePaint());
+    }
+
+    @Override
+    public void drawTextRun(@NonNull char[] text, int start, int end,
+                            int contextStart, int contextEnd, float x, float y, boolean isRtl,
+                            @NonNull Paint paint, @NonNull FontPaint fontPaint) {
+        if ((start | end | contextStart | contextEnd | start - contextStart | end - start
+                | contextEnd - end | text.length - contextEnd) < 0) {
+            throw new IndexOutOfBoundsException();
+        }
+        if (start == end) {
+            return;
+        }
+        final TextBlob.Builder builder = new TextBlob.Builder();
+        ShapedText.doLayoutRun(
+                text, contextStart, contextEnd,
+                start, end, isRtl, fontPaint, null,
+                (piece, __, ___, ____, _fontPaint, offsetX) -> buildTextBlob(builder, piece, offsetX, _fontPaint)
+        );
+        drawTextBlob(builder.build(), x, y, paint);
+    }
+
+    @Override
+    public void drawTextRun(@NonNull CharSequence text, int start, int end,
+                            int contextStart, int contextEnd, float x, float y, boolean isRtl,
+                            @NonNull Paint paint, @NonNull FontPaint fontPaint) {
+        if ((start | end | contextStart | contextEnd | start - contextStart | end - start
+                | contextEnd - end | text.length() - contextEnd) < 0) {
+            throw new IndexOutOfBoundsException();
+        }
+        if (start == end) {
+            return;
+        }
+        final TextBlob.Builder builder = new TextBlob.Builder();
+        final int len = contextEnd - contextStart;
+        final char[] buf = CharUtils.obtain(len);
+        CharUtils.getChars(text, contextStart, contextEnd, buf, 0);
+        ShapedText.doLayoutRun(
+                buf, 0, len,
+                start - contextStart, end - contextStart, isRtl, fontPaint, null,
+                (piece, __, ___, ____, _fontPaint, offsetX) -> buildTextBlob(builder, piece, offsetX, _fontPaint)
+        );
+        CharUtils.recycle(buf);
+        drawTextBlob(builder.build(), x, y, paint);
     }
 
     @Override
@@ -397,11 +448,11 @@ public class ArcCanvas extends Canvas {
     }
 
     @Override
-    public void drawEdgeAAQuad(@Nullable RectF rect, @Nullable float[] clip, int edgeFlags,
+    public void drawEdgeAAQuad(@Nullable RectF rect, @Nullable float[] clip, int clipOffset, int edgeFlags,
                                @Nullable Paint paint) {
         mCanvas.drawEdgeAAQuad(
                 rect != null ? new Rect2f(rect.left, rect.top, rect.right, rect.bottom) : null,
-                clip, edgeFlags, paint != null ? paint.getNativePaint() : null
+                clip, clipOffset, edgeFlags, paint != null ? paint.getNativePaint() : null
         );
     }
 
@@ -413,5 +464,45 @@ public class ArcCanvas extends Canvas {
     @Override
     public boolean isClipRect() {
         return mCanvas.isClipRect();
+    }
+
+    /**
+     * Add a layout piece to text blob builder, the base unit to draw a text.
+     * Similar to {@link ShapedText#computeTextBlob(icyllis.arc3d.sketch.Font)}.
+     *
+     * @param piece the layout piece to draw
+     * @see drawTextRun
+     */
+    @SuppressWarnings("JavadocReference")
+    public static void buildTextBlob(@NonNull TextBlob.Builder builder, @NonNull LayoutPiece piece,
+                                     float offsetX, @NonNull FontPaint paint) {
+        final int nGlyphs = piece.getGlyphCount();
+        if (nGlyphs == 0) {
+            return;
+        }
+        var nativeFont = new icyllis.arc3d.sketch.Font();
+        paint.getNativeFont(nativeFont);
+        var lastFont = piece.getFont(0);
+        int lastPos = 0;
+        int currPos = 1;
+        for (; currPos <= nGlyphs; currPos++) {
+            var currFont = currPos == nGlyphs ? null : piece.getFont(currPos);
+            if (lastFont != currFont) {
+                nativeFont.setTypeface(lastFont.getNativeTypeface());
+                if (nativeFont.getTypeface() != null) {
+                    int runCount = currPos - lastPos;
+                    var runBuffer = builder.allocRunPos(
+                            nativeFont, runCount, null
+                    );
+                    runBuffer.addGlyphs(piece.getGlyphs(), lastPos, runCount);
+                    var positions = piece.getPositions();
+                    for (int i = 0, j = lastPos << 1; i < runCount; i += 1, j += 2) {
+                        runBuffer.addPosition(positions[j] + offsetX, positions[j + 1]);
+                    }
+                }
+                lastFont = currFont;
+                lastPos = currPos;
+            }
+        }
     }
 }

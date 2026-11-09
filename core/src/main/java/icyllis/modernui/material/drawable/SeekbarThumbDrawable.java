@@ -1,19 +1,19 @@
 /*
- * Modern UI.
- * Copyright (C) 2025 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2025-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package icyllis.modernui.material.drawable;
@@ -24,7 +24,6 @@ import icyllis.modernui.graphics.Paint;
 import icyllis.modernui.graphics.RadialGradient;
 import icyllis.modernui.graphics.Rect;
 import icyllis.modernui.graphics.Shader;
-import icyllis.modernui.graphics.drawable.ShapeDrawable;
 import icyllis.modernui.material.MaterialDrawable;
 import icyllis.modernui.resources.Resources;
 import icyllis.modernui.resources.TypedValue;
@@ -49,8 +48,8 @@ public class SeekbarThumbDrawable extends MaterialDrawable {
     public void draw(@NonNull Canvas canvas) {
         Paint paint = Paint.obtain();
         paint.setColor(mColor);
-        paint.setAlpha(ShapeDrawable.modulateAlpha(paint.getAlpha(), mAlpha));
-        if (paint.getAlpha() != 0) {
+        paint.setAlpha(paint.getAlphaF() * mAlpha);
+        if (paint.getAlphaF() != 0) {
             final Rect r = getBounds();
             if (mHasShadowLayer && mShadowShader != null) {
                 paint.setShader(mShadowShader);

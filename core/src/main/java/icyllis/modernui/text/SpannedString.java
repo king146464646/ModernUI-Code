@@ -1,69 +1,56 @@
 /*
- * Modern UI.
- * Copyright (C) 2019-2021 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
- */
-
-/*
- * Copyright (C) 2006 The Android Open Source Project
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package icyllis.modernui.text;
 
 import icyllis.modernui.annotation.NonNull;
+import icyllis.modernui.graphics.text.GetChars;
 
 /**
  * This is the class for text whose content and markup are immutable.
  * For mutable markup, see {@link SpannableString}.
+ * <p>
+ * Although a SpannedString is immutable, it is thread-safe only if you safely
+ * publish it.
  */
 public final class SpannedString extends SpannableStringInternal implements Spanned, GetChars {
 
     /**
-     * @param source           source object to copy from
-     * @param ignoreNoCopySpan whether to copy NoCopySpans in the {@code source}
+     * A static, final, empty SpannedString, no spans, thread-safe.
      */
-    public SpannedString(@NonNull CharSequence source, boolean ignoreNoCopySpan) {
-        super(source, 0, source.length(), ignoreNoCopySpan);
+    public static final SpannedString EMPTY = new SpannedString("");
+
+    /**
+     * Note: {@link NoCopySpan} will not be copied into this.
+     *
+     * @param source source object to copy from
+     */
+    public SpannedString(@NonNull CharSequence source) {
+        super(source, 0, source.length());
     }
 
     /**
-     * @param source           source object to copy from
-     * @param ignoreNoCopySpan whether to copy NoCopySpans in the {@code source}
+     * Note: {@link NoCopySpan} will not be copied into this.
+     *
+     * @param source source object to copy from
      */
-    public SpannedString(@NonNull CharSequence source, int start, int end, boolean ignoreNoCopySpan) {
-        super(source, start, end, ignoreNoCopySpan);
-    }
-
-    public SpannedString(@NonNull CharSequence source) {
-        this(source, false);
-    }
-
     public SpannedString(@NonNull CharSequence source, int start, int end) {
-        super(source, start, end, false);
+        super(source, start, end);
     }
 
     @NonNull
@@ -78,6 +65,9 @@ public final class SpannedString extends SpannableStringInternal implements Span
     @NonNull
     @Override
     public CharSequence subSequence(int start, int end) {
+        if (start == 0 && end == length()) {
+            return this;
+        }
         return new SpannedString(this, start, end);
     }
 }

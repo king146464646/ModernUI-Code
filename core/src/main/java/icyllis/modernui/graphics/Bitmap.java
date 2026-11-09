@@ -1,19 +1,19 @@
 /*
- * Modern UI.
- * Copyright (C) 2021-2025 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2021-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package icyllis.modernui.graphics;
@@ -22,26 +22,43 @@ import com.ibm.icu.text.DateFormat;
 import com.ibm.icu.text.SimpleDateFormat;
 import icyllis.arc3d.core.*;
 import icyllis.modernui.annotation.ColorInt;
+import icyllis.modernui.annotation.NonNull;
+import icyllis.modernui.annotation.Nullable;
 import icyllis.modernui.annotation.Size;
-import icyllis.modernui.annotation.*;
+import icyllis.modernui.annotation.WorkerThread;
 import icyllis.modernui.core.Core;
 import org.jetbrains.annotations.ApiStatus;
 import org.lwjgl.PointerBuffer;
-import org.lwjgl.stb.*;
-import org.lwjgl.system.*;
+import org.lwjgl.stb.STBIWriteCallback;
+import org.lwjgl.stb.STBIWriteCallbackI;
+import org.lwjgl.stb.STBImage;
+import org.lwjgl.stb.STBImageWrite;
+import org.lwjgl.system.MemoryStack;
+import org.lwjgl.system.MemoryUtil;
+import org.lwjgl.system.NativeType;
 import org.lwjgl.util.tinyfd.TinyFileDialogs;
 import org.slf4j.Marker;
 import org.slf4j.MarkerFactory;
-import sun.misc.Unsafe;
 
-import java.io.*;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
 import java.lang.ref.Cleaner;
 import java.lang.ref.Reference;
-import java.nio.channels.*;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.FloatBuffer;
+import java.nio.IntBuffer;
+import java.nio.ShortBuffer;
+import java.nio.channels.Channels;
+import java.nio.channels.WritableByteChannel;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
 import java.util.Date;
+import java.util.Objects;
 import java.util.function.LongConsumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -56,19 +73,18 @@ import static org.lwjgl.system.MemoryUtil.*;
  * <p>
  * Bitmap is created with immutable width, height, row bytes, and memory allocation
  * (memory address), its contents may be changed. You can allocate zero-initialized
- * Bitmap via the static factory methods in this class, i.e. {@link #createBitmap(int, int, Format)}.
- * You can also obtain Bitmap from encoded data (PNG, TGA, BMP, JPEG, HDR, PSD, PBM, PGM, and PPM) via
- * {@link BitmapFactory}.
+ * Bitmap via the static factory methods in this class, i.e. {@link #createBitmap}.
+ * You can also obtain Bitmap from encoded data via {@link BitmapFactory}.
  * <p>
- * The color space of Bitmap defaults to sRGB and can only be in RGB model space
- * or null, color space may be changed via {@link #setColorSpace(ColorSpace)}.
+ * The color space of Bitmap may be changed via {@link #setColorSpace(ColorSpace)}.
  * The alpha defaults to non-premultiplied (independent of RGB channels),
  * alpha type may be changed via {@link #setPremultiplied(boolean)}.
  * The Bitmap's format may also be changed via {@link #setFormat(Format)},
  * as long as the bytes-per-pixel of the old and new formats are the same.
- * For example, when using BitmapFactory to read a single channel image,
- * the default format is GRAY_8. You can re-interpret it as ALPHA_8 type via
- * {@link #setFormat(Format)}, and the image data remains unchanged.
+ * For example, when using {@link BitmapFactory} to read a single channel image,
+ * the default format is {@link Format#GRAY_8}. You can re-interpret it as
+ * {@link Format#ALPHA_8} type via {@link #setFormat(Format)}, and the image
+ * data remains unchanged.
  * <p>
  * The Bitmap provides several methods for manipulating the pixel data,
  * there are single pixel and bulk access methods, which may perform zero or more
@@ -102,7 +118,7 @@ public final class Bitmap implements AutoCloseable {
     private final Cleaner.Cleanable mCleanup;
 
     /*
-     * Represents whether the Bitmap's content is requested to be premultiplied.
+     * Represents whether the Bitmap's content is requested to be premultiplied or opaque.
      * Note that isPremultiplied() does not directly return this value, because
      * isPremultiplied() may never return true for a 565 Bitmap or a bitmap
      * without alpha.
@@ -113,22 +129,23 @@ public final class Bitmap implements AutoCloseable {
      * The actual bitmap's alpha type is kept up to date by
      * pushing down this preference for every format change.
      */
-    private boolean mRequestPremultiplied;
+    @ColorInfo.AlphaType
+    private int mRequestAlphaType;
 
     Bitmap(@NonNull Format format, @NonNull ImageInfo info, long addr, int rowBytes,
            @Nullable LongConsumer freeFn) {
         mFormat = format;
         mPixmap = new Pixmap(info, null, addr, rowBytes);
-        mRequestPremultiplied = info.alphaType() == ColorInfo.AT_PREMUL;
+        mRequestAlphaType = info.alphaType();
         var pixels = new PixelRef(info.width(), info.height(), null, addr, rowBytes, freeFn);
         mCleanup = Core.registerNativeResource(this, pixels);
         mPixels = pixels;
     }
 
-    Bitmap(@NonNull Format format, @NonNull Pixmap pixmap, @NonNull PixelRef pixels) {
+    Bitmap(@NonNull Format format, @NonNull Pixmap pixmap, int requestAlphaType, @NonNull PixelRef pixels) {
         mFormat = format;
         mPixmap = pixmap;
-        mRequestPremultiplied = pixmap.getInfo().alphaType() == ColorInfo.AT_PREMUL;
+        mRequestAlphaType = requestAlphaType;
         mCleanup = Core.registerNativeResource(this, pixels);
         mPixels = pixels;
     }
@@ -137,7 +154,7 @@ public final class Bitmap implements AutoCloseable {
      * Creates a mutable bitmap and its allocation, the content are initialized to zeros.
      * <p>
      * The newly created bitmap will have non-premultiplied alpha if the format has an alpha channel.
-     * The newly created bitmap is in the {@link ColorSpace.Named#SRGB sRGB} color space,
+     * The newly created bitmap is in the {@link ColorSpaces#SRGB sRGB} color space,
      * unless the format is alpha only, in which case the color space is null.
      * You may change the format, alpha type, and color space after creating the bitmap.
      *
@@ -146,14 +163,15 @@ public final class Bitmap implements AutoCloseable {
      * @param format the number of channels and the bit depth
      * @throws IllegalArgumentException width or height out of range
      * @throws OutOfMemoryError         out of native memory
+     * @see #createBitmap(int, int, Format, boolean, ColorSpace)
      */
     @NonNull
     public static Bitmap createBitmap(@Size(min = 1) int width,
                                       @Size(min = 1) int height,
                                       @NonNull Format format) {
-        var colorSpace = format.isChannelHDR()
-                ? ColorSpace.get(ColorSpace.Named.LINEAR_EXTENDED_SRGB)
-                : ColorSpace.get(ColorSpace.Named.SRGB);
+        var colorSpace = format == Format.RGBA_F32
+                ? ColorSpaces.LINEAR_EXTENDED_SRGB
+                : ColorSpaces.SRGB;
         return createBitmap(width, height, format, false, colorSpace);
     }
 
@@ -219,29 +237,50 @@ public final class Bitmap implements AutoCloseable {
      *
      * @param address         base address
      * @param rowBytes        size of one row of buffer; width times bpp, or larger
-     * @param freeFn          free function for address
+     * @param freeFn          free function for address, or null to only borrow memory
      * @param width           width of pixels
      * @param height          height of pixels
      * @param format          a color interpretation
      * @param isPremultiplied an alpha interpretation
-     * @param colorSpace      a color space describing the pixels
+     * @param colorSpace      a color space describing the pixels, null means no color management
      * @return a bitmap
+     * @throws IllegalArgumentException invalid arguments
      */
-    @ApiStatus.Experimental
     @NonNull
     public static Bitmap wrap(@NativeType("const void *") long address, int rowBytes,
                               @Nullable LongConsumer freeFn,
                               @Size(min = 1) int width, @Size(min = 1) int height,
                               @NonNull Format format, boolean isPremultiplied,
                               @Nullable ColorSpace colorSpace) {
+        if (address == NULL) {
+            throw new NullPointerException("address is null");
+        }
+        int colorType = format.getColorType();
+        if (!ColorInfo.validMemoryAddress(colorType, null, address)) {
+            throw new IllegalArgumentException("address=" + address + " does not match the alignment requirement");
+        }
         int alphaType = format.hasAlpha()
                 ? isPremultiplied
                 ? ColorInfo.AT_PREMUL
                 : ColorInfo.AT_UNPREMUL
                 : ColorInfo.AT_OPAQUE;
-        alphaType = ColorInfo.validateAlphaType(format.getColorType(), alphaType);
+        alphaType = ColorInfo.validateAlphaType(colorType, alphaType);
         ImageInfo info = ImageInfo.make(width, height,
-                format.getColorType(), alphaType, colorSpace);
+                colorType, alphaType, colorSpace);
+        if (!info.isValid()) {
+            throw new IllegalArgumentException(String.format("width=%d or height=%d is too large or non-positive",
+                    width, height));
+        }
+        int minRB = info.minRowBytes();
+        if (rowBytes == 0) {
+            rowBytes = minRB;
+        }
+        if (minRB == 0 || rowBytes < minRB ||
+                !ColorInfo.validMemoryAddress(colorType, null, rowBytes)) {
+            throw new IllegalArgumentException(String.format("rowBytes=%d does not match the alignment requirement, " +
+                            "or too small, or width=%d is too large; minimum required rowBytes=%d",
+                    rowBytes, width, minRB));
+        }
         return new Bitmap(format, info, address, rowBytes, freeFn);
     }
 
@@ -347,6 +386,10 @@ public final class Bitmap implements AutoCloseable {
         }
     }*/
 
+    /**
+     * @hide
+     * @hidden
+     */
     @ApiStatus.Internal
     @NonNull
     public ImageInfo getInfo() {
@@ -375,7 +418,10 @@ public final class Bitmap implements AutoCloseable {
 
     /**
      * Returns the number of bytes that can be used to store this bitmap's pixels.
+     * <p>
+     * This method is obsolete in favor of {@link #getByteSize()}.
      */
+    @ApiStatus.Obsolete
     public long getSize() {
         if (mPixels == null) {
             LOGGER.warn(MARKER, "Called getSize() on a recycle()'d bitmap! This is undefined behavior!");
@@ -384,12 +430,34 @@ public final class Bitmap implements AutoCloseable {
         return (long) getRowBytes() * getHeight();
     }
 
+    /**
+     * Returns the minimum number of bytes that can be used to store this bitmap's pixels.
+     *
+     * @return the minimum size, in bytes; or 0 if failed
+     * @since 3.13.0
+     */
+    public long getByteSize() {
+        if (mPixels == null) {
+            LOGGER.warn(MARKER, "Called getByteSize() on a recycle()'d bitmap! This is undefined behavior!");
+            return 0;
+        }
+        return mPixmap.getInfo().computeByteSize(getRowBytes());
+    }
+
+    /**
+     * @hide
+     * @hidden
+     */
     @ApiStatus.Internal
     @ColorInfo.ColorType
     public int getColorType() {
         return mPixmap.getColorType();
     }
 
+    /**
+     * @hide
+     * @hidden
+     */
     @ApiStatus.Internal
     @ColorInfo.AlphaType
     public int getAlphaType() {
@@ -419,9 +487,14 @@ public final class Bitmap implements AutoCloseable {
      * If the bytes-per-pixel of new format and original format do not match, an
      * {@link IllegalArgumentException} will be thrown and the bitmap will not
      * be modified.
+     * <p>
+     * If the new format introduces an alpha channel, any previously recorded
+     * alpha type state configured via {@link #setPremultiplied(boolean)} will
+     * become active and govern subsequent sampling or blending.
      *
      * @param format a new interpretation of existing pixel data
      * @throws IllegalArgumentException bpp of new format is not equal to bpp of original format
+     * @see #setPremultiplied(boolean)
      */
     public void setFormat(@NonNull Format format) {
         if (format.getBytesPerPixel() == 0) {
@@ -435,8 +508,8 @@ public final class Bitmap implements AutoCloseable {
         var newColorType = format.getColorType();
         if (info.colorType() != newColorType) {
             var newAlphaType = ColorInfo.validateAlphaType(newColorType,
-                    mRequestPremultiplied ? ColorInfo.AT_PREMUL : ColorInfo.AT_UNPREMUL);
-            var newInfo = new ImageInfo(
+                    mRequestAlphaType);
+            var newInfo = ImageInfo.make(
                     info.width(), info.height(),
                     newColorType, newAlphaType,
                     info.colorSpace()
@@ -447,40 +520,118 @@ public final class Bitmap implements AutoCloseable {
     }
 
     /**
-     * Returns the number of channels.
+     * Returns the number of channels of the bitmap's format.
+     *
+     * @return the number of channels
      */
     public int getChannels() {
         return mFormat.getChannels();
     }
 
     /**
-     * Returns true if the bitmap's format supports per-pixel alpha, and
-     * if the pixels may contain non-opaque alpha values. For some formats,
-     * this is always false (e.g. {@link Format#RGB_888}), since they do
-     * not support per-pixel alpha. However, for formats that do, the
-     * bitmap may be flagged to be known that all of its pixels are opaque.
-     * In this case hasAlpha() will also return false. If a format such as
-     * {@link Format#RGBA_8888} is not so flagged, it will return true
-     * by default.
+     * Checks solely whether the bitmap's current format contains an alpha channel.
+     * <p>
+     * This method only inspects the channel configuration of the {@link Format} and does not
+     * check the actual pixel values or the opacity flag.
+     *
+     * @return true if the bitmap's format supports an alpha channel, false otherwise
+     * @see #isOpaque()
+     * @see #isPremultiplied()
      */
     public boolean hasAlpha() {
-        assert mPixels != null;
-        return !getInfo().isOpaque();
+        return mFormat.hasAlpha();
     }
 
     /**
-     * <p>Indicates whether pixels stored in this bitmaps are stored premultiplied.
-     * When a pixel is premultiplied, the RGB components have been multiplied by
-     * the alpha component. For instance, if the original color is a 50%
-     * translucent red <code>(128, 255, 0, 0)</code>, the premultiplied form is
-     * <code>(128, 128, 0, 0)</code>.</p>
+     * Returns whether the bitmap has only an alpha channel (i.e. a transparency mask).
+     * If so, then when drawn its color depends on the solid color of Paint, or
+     * Paint's shader if set.
      *
-     * <p>This method only returns true if {@link #hasAlpha()} returns true.
-     * A bitmap with no alpha channel can be used both as a premultiplied and
-     * as a non premultiplied bitmap.</p>
+     * @return whether the bitmap is alpha only
+     * @since 3.13.0
+     */
+    public boolean isAlphaMask() {
+        return mFormat.isAlphaOnly();
+    }
+
+    /**
+     * Returns true if the bitmap's format does not support per-pixel alpha
+     * (where the alpha value is implicitly 1.0), or if the bitmap is flagged
+     * to indicate that all of its pixels are known to be opaque (meaning their
+     * alpha values are explicitly 1.0).
+     * <p>
+     * Due to state exclusivity, if this method returns true on a format that supports alpha,
+     * {@link #isPremultiplied()} is guaranteed to return false.
+     * <p>
+     * If a format that supports alpha (such as {@link Format#RGBA_8888}) is not explicitly
+     * flagged as opaque, this method returns false by default. Conversely, for formats
+     * without an alpha channel (e.g., {@link Format#RGB_888}), this method <strong>always</strong>
+     * returns true.
      *
-     * @return true if the underlying pixels have been premultiplied, false
-     * otherwise
+     * @return true if the bitmap is guaranteed to be opaque
+     * @see #setOpaque(boolean)
+     * @see #hasAlpha()
+     * @since 3.13.0
+     */
+    public boolean isOpaque() {
+        assert mPixels != null;
+        return getInfo().isOpaque();
+    }
+
+    /**
+     * Sets whether the bitmap is flagged as opaque. Note that this method only
+     * modifies the internal metadata flag and does not alter the actual pixel data.
+     * <p>
+     * <strong>State Conflict Warning:</strong> This flag is mutually exclusive with the
+     * premultiplied state. Setting {@code setOpaque(true)} will immediately override and
+     * invalidate any previous premultiplied configuration, causing {@link #isPremultiplied()}
+     * to return false.
+     * <p>
+     * <strong>Equivalence Behavior:</strong> Calling {@code setOpaque(false)} is strictly
+     * equivalent to calling {@code setPremultiplied(false)}. Both actions downgrade the
+     * bitmap's alpha type to an unpremultiplied (straight alpha) state.
+     * <p>
+     * When an {@link Image} object is created using a bitmap flagged as opaque,
+     * the GPU pipeline can leverage this hint to execute occlusion culling
+     * (such as Early-Z) during rendering, significantly improving fill-rate performance.
+     *
+     * @param opaque true to flag the bitmap as known-opaque (disabling premultiplication),
+     *               false to treat it as unpremultiplied/straight alpha
+     * @see #isOpaque()
+     * @see #setPremultiplied(boolean)
+     * @since 3.13.0
+     */
+    public void setOpaque(boolean opaque) {
+        assert mPixels != null;
+        int requestAlphaType = opaque ? ColorInfo.AT_OPAQUE : ColorInfo.AT_UNPREMUL;
+        if (mRequestAlphaType == requestAlphaType) {
+            return;
+        }
+        mRequestAlphaType = requestAlphaType;
+        var info = getInfo();
+        var newAlphaType = ColorInfo.validateAlphaType(info.colorType(),
+                mRequestAlphaType);
+        if (info.alphaType() != newAlphaType) {
+            mPixmap = new Pixmap(info.makeAlphaType(newAlphaType), mPixmap);
+        }
+    }
+
+    /**
+     * Indicates whether the pixels stored in this bitmap are stored in a premultiplied format.
+     * <p>
+     * When a pixel is premultiplied, the RGB components have already been multiplied by
+     * the alpha component. For instance, if the original color is a 50% translucent red
+     * {@code (1.0, 0.0, 0.0, 0.5)}, its premultiplied form is {@code (0.5, 0.0, 0.0, 0.5)}.
+     * <p>
+     * <strong>State Exclusivity:</strong> This method will <strong>always</strong> return false
+     * if {@link #isOpaque()} returns true, as an opaque bitmap cannot logically have
+     * premultiplied transparent alpha transitions.
+     * <p>
+     * This method only returns true if {@link #hasAlpha()} returns true and the bitmap has been
+     * explicitly configured via {@code setPremultiplied(true)}.
+     *
+     * @return true if the underlying pixels are premultiplied, false otherwise
+     * @see #setPremultiplied(boolean)
      */
     public boolean isPremultiplied() {
         assert mPixels != null;
@@ -490,22 +641,40 @@ public final class Bitmap implements AutoCloseable {
     /**
      * Sets whether the bitmap should treat its data as premultiplied or not.
      * <p>
-     * By calling this method, further operations will reinterpret the colors
-     * using the specified alpha type, existing pixel data will remain unchanged.
+     * Calling this method causes further operations (such as texture sampling or blending)
+     * to reinterpret the color channels using the specified alpha type. The existing raw
+     * pixel data remains completely unchanged.
+     * <p>
+     * <strong>State Conflict Warning:</strong> This configuration is mutually exclusive with
+     * the opaque flag. Setting {@code setPremultiplied(true)} will immediately override and
+     * invalidate the opaque status, causing {@link #isOpaque()} to return false (provided the
+     * format supports alpha).
+     * <p>
+     * <strong>Equivalence Behavior:</strong> Calling {@code setPremultiplied(false)} is
+     * strictly equivalent to calling {@code setOpaque(false)}. Both actions reset the
+     * bitmap's alpha type to an unpremultiplied (straight alpha) state.
      * <p>
      * If the current format does not have an alpha channel ({@link #hasAlpha()} returns false),
-     * then the specified alpha type is recorded and will work in the future,
-     * see {@link #setFormat(Format)}.
+     * the specified alpha type is still recorded internally. It will remain dormant and take
+     * effect if the format is later changed to one with an alpha channel via {@link #setFormat(Format)}.
      *
-     * @param premultiplied whether premultiplied alpha type is requested
+     * @param premultiplied true if the pixel data should be interpreted as premultiplied
+     *                      (disabling the opaque flag), false to reset to unpremultiplied/straight alpha
+     * @see #isPremultiplied()
+     * @see #setOpaque(boolean)
+     * @see #setFormat(Format)
      */
     public void setPremultiplied(boolean premultiplied) {
         assert mPixels != null;
-        mRequestPremultiplied = premultiplied;
+        int requestAlphaType = premultiplied ? ColorInfo.AT_PREMUL : ColorInfo.AT_UNPREMUL;
+        if (mRequestAlphaType == requestAlphaType) {
+            return;
+        }
+        mRequestAlphaType = requestAlphaType;
         if (hasAlpha()) {
             var info = getInfo();
             var newAlphaType = ColorInfo.validateAlphaType(info.colorType(),
-                    premultiplied ? ColorInfo.AT_PREMUL : ColorInfo.AT_UNPREMUL);
+                    mRequestAlphaType);
             if (info.alphaType() != newAlphaType) {
                 mPixmap = new Pixmap(info.makeAlphaType(newAlphaType), mPixmap);
             }
@@ -528,41 +697,12 @@ public final class Bitmap implements AutoCloseable {
      * <p>This affects how the framework will interpret the color at each pixel.</p>
      *
      * @param newColorSpace to assign to the bitmap
-     * @throws IllegalArgumentException If the specified color space is not {@link ColorSpace.Model#RGB RGB},
-     *                                  has a transfer function that is not an
-     *                                  {@link ColorSpace.Rgb.TransferParameters ICC parametric curve}, or whose
-     *                                  components min/max values reduce the numerical range compared to the
-     *                                  previously assigned color space.
      */
     public void setColorSpace(@Nullable ColorSpace newColorSpace) {
         var oldInfo = getInfo();
         var oldColorSpace = oldInfo.colorSpace();
         if (oldColorSpace == newColorSpace) {
             return;
-        }
-        if (newColorSpace != null) {
-            if (!(newColorSpace instanceof ColorSpace.Rgb rgbColorSpace)) {
-                throw new IllegalArgumentException("The new ColorSpace must use the RGB color model");
-            }
-            if (rgbColorSpace.getTransferParameters() == null) {
-                throw new IllegalArgumentException("The new ColorSpace must use an ICC parametric transfer function");
-            }
-        }
-        if (oldColorSpace != null && newColorSpace != null) {
-            for (int i = 0; i < oldColorSpace.getComponentCount(); i++) {
-                if (oldColorSpace.getMinValue(i) < newColorSpace.getMinValue(i)) {
-                    throw new IllegalArgumentException("The new ColorSpace cannot increase the "
-                            + "minimum value for any of the components compared to the current "
-                            + "ColorSpace. To perform this type of conversion create a new "
-                            + "Bitmap in the desired ColorSpace and draw this Bitmap into it.");
-                }
-                if (oldColorSpace.getMaxValue(i) > newColorSpace.getMaxValue(i)) {
-                    throw new IllegalArgumentException("The new ColorSpace cannot decrease the "
-                            + "maximum value for any of the components compared to the current "
-                            + "ColorSpace/ To perform this type of conversion create a new "
-                            + "Bitmap in the desired ColorSpace and draw this Bitmap into it.");
-                }
-            }
         }
         mPixmap = new Pixmap(oldInfo.makeColorSpace(newColorSpace), mPixmap);
     }
@@ -572,6 +712,8 @@ public final class Bitmap implements AutoCloseable {
      * The address is valid until bitmap closed.
      *
      * @return the pointer of pixel data, or NULL if released
+     * @hide
+     * @hidden
      */
     @ApiStatus.Internal
     public long getAddress() {
@@ -686,7 +828,7 @@ public final class Bitmap implements AutoCloseable {
      * Returns the {@link Color} at the specified location. Throws an exception
      * if x or y are out of bounds (negative or >= to the width or height
      * respectively). The returned color is a non-premultiplied ARGB value in
-     * the {@link ColorSpace.Named#SRGB sRGB} color space, the format is the
+     * the {@link ColorSpaces#SRGB sRGB} color space, the format is the
      * same as {@link Format#BGRA_8888_PACK32}.
      * <p>
      * If the max bits per channel for the color type is greater than 8, or colors are premultiplied,
@@ -791,7 +933,7 @@ public final class Bitmap implements AutoCloseable {
      * The stride parameter allows the caller to allow for gaps in the returned pixels
      * array between rows. For normal packed results, just pass width for the stride value.
      * The returned colors are non-premultiplied ARGB values in the
-     * {@link ColorSpace.Named#SRGB sRGB} color space, i.e. it has
+     * {@link ColorSpaces#SRGB sRGB} color space, i.e. it has
      * {@link Format#BGRA_8888_PACK32} pixel format.
      * <p>
      * If the max bits per channel of {@link #getFormat()} is greater than 8, or colors are
@@ -821,6 +963,9 @@ public final class Bitmap implements AutoCloseable {
         if (width == 0 || height == 0) {
             return; // nothing to do
         }
+        if (stride == 0) {
+            stride = width;
+        }
         checkOutOfBounds(srcX, srcY, width, height, offset, stride, dst.length);
         if (getColorType() == ColorInfo.CT_UNKNOWN) {
             for (int j = 0; j < height; ++j) {
@@ -829,11 +974,11 @@ public final class Bitmap implements AutoCloseable {
             }
         } else {
             try {
-                var dstInfo = new ImageInfo(width, height,
+                var dstInfo = ImageInfo.make(width, height,
                         ColorInfo.CT_BGRA_8888_NATIVE, ColorInfo.AT_UNPREMUL,
-                        ColorSpace.get(ColorSpace.Named.SRGB));
+                        ColorSpaces.SRGB);
                 var dstPixmap = new Pixmap(dstInfo, dst,
-                        Unsafe.ARRAY_INT_BASE_OFFSET + (long) offset << 2,
+                        (long) offset << 2,
                         stride << 2);
                 boolean res = mPixmap.readPixels(dstPixmap, srcX, srcY);
                 assert res;
@@ -846,7 +991,7 @@ public final class Bitmap implements AutoCloseable {
     /**
      * Copies a Rect of pixels from src. Copy starts at (dstX, dstY), and does not exceed
      * (width, height). Each element in the array is a packed int representing a non-premultiplied
-     * ARGB {@link Color} in the {@link ColorSpace.Named#SRGB sRGB} color space, i.e. it has
+     * ARGB {@link Color} in the {@link ColorSpaces#SRGB sRGB} color space, i.e. it has
      * {@link Format#BGRA_8888_PACK32} pixel format. The stride parameter allows the caller
      * to allow for gaps in the source pixels array between rows. For normal packed pixels,
      * just pass width for the stride value.
@@ -875,14 +1020,17 @@ public final class Bitmap implements AutoCloseable {
         if (width == 0 || height == 0) {
             return; // nothing to do
         }
+        if (stride == 0) {
+            stride = width;
+        }
         checkOutOfBounds(dstX, dstY, width, height, offset, stride, src.length);
         if (getColorType() != ColorInfo.CT_UNKNOWN) {
             try {
-                var srcInfo = new ImageInfo(width, height,
+                var srcInfo = ImageInfo.make(width, height,
                         ColorInfo.CT_BGRA_8888_NATIVE, ColorInfo.AT_UNPREMUL,
-                        ColorSpace.get(ColorSpace.Named.SRGB));
+                        ColorSpaces.SRGB);
                 var srcPixmap = new Pixmap(srcInfo, src,
-                        Unsafe.ARRAY_INT_BASE_OFFSET + (long) offset << 2,
+                        (long) offset << 2,
                         stride << 2);
                 boolean res = mPixmap.writePixels(srcPixmap, dstX, dstY);
                 assert res;
@@ -927,6 +1075,9 @@ public final class Bitmap implements AutoCloseable {
         if (width == 0 || height == 0) {
             return; // nothing to do
         }
+        if (stride == 0) {
+            stride = width;
+        }
         checkOutOfBounds(srcX, srcY, width, height, offset, stride, dst.length >> 2);
         if (getColorType() == ColorInfo.CT_UNKNOWN) {
             for (int j = 0; j < height; ++j) {
@@ -935,11 +1086,11 @@ public final class Bitmap implements AutoCloseable {
             }
         } else {
             try {
-                var dstInfo = new ImageInfo(width, height,
+                var dstInfo = ImageInfo.make(width, height,
                         ColorInfo.CT_RGBA_F32, getAlphaType(),
                         getColorSpace());
                 var dstPixmap = new Pixmap(dstInfo, dst,
-                        Unsafe.ARRAY_FLOAT_BASE_OFFSET + (long) offset << 4,
+                        (long) offset << 4,
                         stride << 4);
                 boolean res = mPixmap.readPixels(dstPixmap, srcX, srcY);
                 assert res;
@@ -983,14 +1134,17 @@ public final class Bitmap implements AutoCloseable {
         if (width == 0 || height == 0) {
             return; // nothing to do
         }
+        if (stride == 0) {
+            stride = width;
+        }
         checkOutOfBounds(dstX, dstY, width, height, offset, stride, src.length >> 2);
         if (getColorType() != ColorInfo.CT_UNKNOWN) {
             try {
-                var srcInfo = new ImageInfo(width, height,
+                var srcInfo = ImageInfo.make(width, height,
                         ColorInfo.CT_RGBA_F32, getAlphaType(),
                         getColorSpace());
                 var srcPixmap = new Pixmap(srcInfo, src,
-                        Unsafe.ARRAY_FLOAT_BASE_OFFSET + (long) offset << 4,
+                        (long) offset << 4,
                         stride << 4);
                 boolean res = mPixmap.writePixels(srcPixmap, dstX, dstY);
                 assert res;
@@ -1108,6 +1262,23 @@ public final class Bitmap implements AutoCloseable {
         }
     }
 
+    private static long bufferAddress(@NonNull java.nio.Buffer buffer) {
+        if (buffer.isDirect()) {
+            return MemoryUtil.memAddress(buffer);
+        }
+        int shift;
+        if (buffer instanceof ByteBuffer) {
+            shift = 0;
+        } else if (buffer instanceof ShortBuffer || buffer instanceof CharBuffer) {
+            shift = 1;
+        } else if (buffer instanceof IntBuffer || buffer instanceof FloatBuffer) {
+            shift = 2;
+        } else {
+            shift = 3;
+        }
+        return ((long) buffer.arrayOffset() + buffer.position()) << shift;
+    }
+
     /**
      * Copy the bitmap's pixels into the specified buffer. The buffer can be a
      * heap buffer, a direct buffer, or a native buffer (by wrapping an address).
@@ -1150,9 +1321,17 @@ public final class Bitmap implements AutoCloseable {
         checkOutOfBounds(srcX, srcY, width, height);
         try {
             var dstInfo = getInfo().makeWH(width, height);
+            var dstBase = dst.hasArray() ? dst.array() : null;
+            var dstAddress = bufferAddress(dst);
+            if (!ColorInfo.validMemoryAddress(dstInfo.colorType(), dstBase, dstAddress)) {
+                throw new IllegalArgumentException("Destination address does not match the alignment requirement");
+            }
+            if (!ColorInfo.validMemoryAddress(dstInfo.colorType(), null, rowBytes)) {
+                throw new IllegalArgumentException("Destination row bytes does not match the alignment requirement");
+            }
             var dstPixmap = new Pixmap(dstInfo,
-                    dst.hasArray() ? dst.array() : null,
-                    MemoryUtil.memAddress(dst),
+                    dstBase,
+                    dstAddress,
                     rowBytes);
             return mPixmap.readPixels(dstPixmap, srcX, srcY);
         } finally {
@@ -1197,7 +1376,7 @@ public final class Bitmap implements AutoCloseable {
         if (isImmutable()) {
             throw new IllegalStateException("Cannot write to immutable bitmap");
         }
-        if (src.isReadOnly()) {
+        if (src.isReadOnly() && !src.isDirect()) {
             // if we want to peek the underlying src.array(), it must not be read-only
             throw new IllegalArgumentException("Cannot copy from read-only buffer");
         }
@@ -1207,9 +1386,17 @@ public final class Bitmap implements AutoCloseable {
         checkOutOfBounds(dstX, dstY, width, height);
         try {
             var srcInfo = getInfo().makeWH(width, height);
+            var srcBase = src.hasArray() ? src.array() : null;
+            var srcAddress = bufferAddress(src);
+            if (!ColorInfo.validMemoryAddress(srcInfo.colorType(), srcBase, srcAddress)) {
+                throw new IllegalArgumentException("Source address does not match the alignment requirement");
+            }
+            if (!ColorInfo.validMemoryAddress(srcInfo.colorType(), null, rowBytes)) {
+                throw new IllegalArgumentException("Source row bytes does not match the alignment requirement");
+            }
             var srcPixmap = new Pixmap(srcInfo,
-                    src.hasArray() ? src.array() : null,
-                    MemoryUtil.memAddress(src),
+                    srcBase,
+                    srcAddress,
                     rowBytes);
             return mPixmap.writePixels(srcPixmap, dstX, dstY);
         } finally {
@@ -1271,6 +1458,7 @@ public final class Bitmap implements AutoCloseable {
      * This method is <b>UNSAFE</b>, use with caution!
      *
      * @return the current pixel map
+     * @hide
      * @hidden
      */
     @ApiStatus.Internal
@@ -1287,6 +1475,7 @@ public final class Bitmap implements AutoCloseable {
      * This method is <b>UNSAFE</b>, use with caution!
      *
      * @return the ref of pixel data, or null if released
+     * @hide
      * @hidden
      */
     @ApiStatus.Internal
@@ -1297,18 +1486,23 @@ public final class Bitmap implements AutoCloseable {
     }
 
     /**
+     * @hide
      * @hidden
      */
     @ApiStatus.Internal
     @SharedPtr
     @Nullable
     public PixelRef refPixels() {
+        PixelRef pixels;
         try {
-            // this operation is not atomic
-            return RefCnt.create(mPixels);
+            synchronized (this) {
+                // this operation is not atomic
+                pixels = RefCnt.create(mPixels);
+            }
         } finally {
             Reference.reachabilityFence(this);
         }
+        return pixels;
     }
 
     /**
@@ -1371,11 +1565,18 @@ public final class Bitmap implements AutoCloseable {
     public void saveToPath(@NonNull SaveFormat format, int quality,
                            @NonNull Path path) throws IOException {
         checkReleased();
-        try (final var channel = FileChannel.open(path,
+        try {
+            // If the path represents a file on the OS default file system, then this is faster
+            File file = path.toFile();
+            saveToFile(format, quality, file);
+            return;
+        } catch (RuntimeException ignored) {
+        }
+        try (final var stream = Files.newOutputStream(path,
                 StandardOpenOption.WRITE,
                 StandardOpenOption.CREATE,
                 StandardOpenOption.TRUNCATE_EXISTING)) {
-            saveToChannel(format, quality, channel);
+            saveToStream(format, quality, stream);
         } catch (IOException e) {
             throw new IOException("Failed to save image to path \"" +
                     path.toAbsolutePath() + "\"", e);
@@ -1467,13 +1668,20 @@ public final class Bitmap implements AutoCloseable {
      * <p>
      * The system can ensure that the native allocation of a Bitmap to be
      * released when the Bitmap object becomes phantom-reachable. However,
-     * it tends to take a very long time to perform automatic cleanup.
+     * it requires a GC cycle to perform automatic cleanup.
+     * <p>
+     * This method is thread safe and can be called multiple times.
      */
     @Override
     public void close() {
-        mPixels = null;
-        // cleaner is thread safe
-        mCleanup.clean();
+        if (mPixels == null) {
+            return;
+        }
+        synchronized (this) {
+            mPixels = null;
+            // cleaner is thread safe
+            mCleanup.clean();
+        }
     }
 
     /**
@@ -1511,6 +1719,46 @@ public final class Bitmap implements AutoCloseable {
     }
 
     /**
+     * Create a shallow copy of this bitmap as a sub-image view restricted to the
+     * specified rectangular region, without copying or reordering pixel data.
+     * This is equivalent to creating a shared owner for the pixel memory.
+     * The sub-image shares the same underlying pixel memory, only differing in its
+     * logical origin and dimensions within the shared buffer. You may reinterpret
+     * or close the returned Bitmap without affecting the original Bitmap, but
+     * modifications to the pixel memory will be reflected in all shared owners at
+     * the same time.
+     * <p>
+     * Note that since the pixel memory is shared, it is not safe for multiple
+     * owners to modify the pixel memory at the same time, which will further cause
+     * memory safety issues.
+     *
+     * @param x      the x coordinate of the sub-image origin in the source bitmap
+     * @param y      the y coordinate of the sub-image origin in the source bitmap
+     * @param width  the width of the sub-image region
+     * @param height the height of the sub-image region
+     * @return a shallow copy of bitmap representing the sub-image view
+     * @throws IllegalArgumentException if x, y, width, height exceed the bounds of the bitmap
+     * @throws IllegalStateException    this bitmap is already closed
+     * @see #clone()
+     * @since 3.13
+     */
+    @NonNull
+    public Bitmap subImage(int x, int y, int width, int height) {
+        checkOutOfBounds(x, y, width, height);
+        PixelRef pixels = refPixels();
+        if (pixels == null) {
+            throw new IllegalStateException("Cannot clone a recycled bitmap!");
+        }
+        var subPixmap = mPixmap.makeSubset(new Rect2i(
+                x, y, x + width, y + height
+        ));
+        if (subPixmap == null) {
+            throw new IllegalArgumentException(); // impossible
+        }
+        return new Bitmap(mFormat, subPixmap, mRequestAlphaType, pixels); // move
+    }
+
+    /**
      * Create a shallow copy of this bitmap, this is equivalent to creating a
      * shared owner for the pixel memory. You may reinterpret or close the
      * returned Bitmap without affecting the original Bitmap, but modifications
@@ -1522,6 +1770,7 @@ public final class Bitmap implements AutoCloseable {
      *
      * @return a shallow copy of bitmap
      * @throws IllegalStateException this bitmap is already closed
+     * @see #subImage(int, int, int, int)
      */
     @SuppressWarnings("MethodDoesntCallSuperMethod")
     @NonNull
@@ -1530,7 +1779,7 @@ public final class Bitmap implements AutoCloseable {
         if (pixels == null) {
             throw new IllegalStateException("Cannot clone a recycled bitmap!");
         }
-        return new Bitmap(mFormat, mPixmap, pixels); // move
+        return new Bitmap(mFormat, mPixmap, mRequestAlphaType, pixels); // move
     }
 
     /**
@@ -1589,32 +1838,38 @@ public final class Bitmap implements AutoCloseable {
          */
         RGBA_8888       (4, ColorInfo.CT_RGBA_8888      ),
         /**
-         * Unsupported, DO NOT USE.
+         * Grayscale, one channel, 16-bit unsigned per channel.
+         * Basic data type: short.
          * <pre>
          * 0       2  byte
          * | gray  |
          * </pre>
+         * Supported since 3.13.
          */
-        @ApiStatus.Internal
-        GRAY_16         (1, ColorInfo.CT_UNKNOWN        ),
+        GRAY_16         (1, ColorInfo.CT_GRAY_16        ),
         /**
-         * Unsupported, DO NOT USE.
+         * Grayscale, with alpha, two channels, 16-bit unsigned per channel.
+         * Basic data type: short.
          * <pre>
          * 0       2       4  byte
          * | gray  | alpha |
          * </pre>
+         * Supported since 3.13.
          */
-        @ApiStatus.Internal
-        GRAY_ALPHA_1616 (2, ColorInfo.CT_UNKNOWN        ),
+        GRAY_ALPHA_1616 (2, ColorInfo.CT_GRAY_ALPHA_1616),
         /**
-         * Unsupported, DO NOT USE.
+         * RGB, three channels, 16-bit unsigned per channel.
+         * Basic data type: short.
          * <pre>
          * 0       2       4       6  byte
          * |   r   |   g   |   b   |
          * </pre>
+         * Because the bpp of this format is not a power of 2,
+         * operations on this format will be slower.
+         * <p>
+         * Supported since 3.13.
          */
-        @ApiStatus.Internal
-        RGB_161616      (3, ColorInfo.CT_UNKNOWN        ),
+        RGB_161616      (3, ColorInfo.CT_RGB_161616     ),
         /**
          * RGB, with alpha, four channels, 16-bit unsigned per channel.
          * Basic data type: short.
@@ -1624,21 +1879,6 @@ public final class Bitmap implements AutoCloseable {
          * </pre>
          */
         RGBA_16161616   (4, ColorInfo.CT_RGBA_16161616  ),
-        /**
-         * Unsupported, DO NOT USE.
-         */
-        @ApiStatus.Internal
-        GRAY_F32        (1, ColorInfo.CT_UNKNOWN        ),
-        /**
-         * Unsupported, DO NOT USE.
-         */
-        @ApiStatus.Internal
-        GRAY_ALPHA_F32  (2, ColorInfo.CT_UNKNOWN        ),
-        /**
-         * Unsupported, DO NOT USE.
-         */
-        @ApiStatus.Internal
-        RGB_F32         (3, ColorInfo.CT_UNKNOWN        ),
         /**
          * RGB, with alpha, four channels, 32-bit floating-point per channel.
          * Basic data type: float.
@@ -1786,6 +2026,7 @@ public final class Bitmap implements AutoCloseable {
          * but the alpha channel is always filled with 0xFF and/or considered opaque.
          * This may be faster than {@link #RGB_888} when doing pixel operations.
          */
+        @ApiStatus.Experimental
         RGBX_8888       (4, ColorInfo.CT_RGBX_8888      ),
         /**
          * RGB, with alpha, four channels, 8-bit unsigned per channel.
@@ -1797,26 +2038,6 @@ public final class Bitmap implements AutoCloseable {
          */
         BGRA_8888       (4, ColorInfo.CT_BGRA_8888      ),
         /**
-         * RGB, with alpha, four channels, 8-bit unsigned per channel.
-         * Basic data type: byte.
-         * <pre>
-         * 0       1       2       3       4  byte
-         * |   a   |   b   |   g   |   r   |
-         * </pre>
-         */
-        @ApiStatus.Experimental
-        ABGR_8888       (4, ColorInfo.CT_ABGR_8888      ),
-        /**
-         * RGB, with alpha, four channels, 8-bit unsigned per channel.
-         * Basic data type: byte.
-         * <pre>
-         * 0       1       2       3       4  byte
-         * |   a   |   r   |   g   |   b   |
-         * </pre>
-         */
-        @ApiStatus.Experimental
-        ARGB_8888       (4, ColorInfo.CT_ARGB_8888      ),
-        /**
          * RGB, with alpha, packed four channels, 32-bit unsigned per pixel.
          * Basic data type: int.
          * <pre>
@@ -1827,9 +2048,7 @@ public final class Bitmap implements AutoCloseable {
          * int color = (R & 0xff) | (G & 0xff) << 8 | (B & 0xff) << 16 | (A & 0xff) << 24;
          * </pre>
          * On little-endian machine, this is the same as {@link #RGBA_8888}.
-         * On big-endian machine, this is the same as {@link #ABGR_8888}.
          */
-        @ApiStatus.Experimental
         RGBA_8888_PACK32(4, ColorInfo.CT_RGBA_8888_NATIVE),
         /**
          * RGB, with alpha, packed four channels, 32-bit unsigned per pixel.
@@ -1842,7 +2061,6 @@ public final class Bitmap implements AutoCloseable {
          * int color = (B & 0xff) | (G & 0xff) << 8 | (R & 0xff) << 16 | (A & 0xff) << 24;
          * </pre>
          * On little-endian machine, this is the same as {@link #BGRA_8888}.
-         * On big-endian machine, this is the same as {@link #ARGB_8888}.
          * This is actually used for int values that marked as {@link ColorInt}, which
          * is known as ARGB 32-bit colors. But unless you only use Bitmap on the CPU side,
          * use {@link #RGBA_8888} instead for better CPU<->GPU transfer performance.
@@ -1850,14 +2068,13 @@ public final class Bitmap implements AutoCloseable {
         BGRA_8888_PACK32(4, ColorInfo.CT_BGRA_8888_NATIVE);
         //@formatter:on
 
-        private static final Format[] FORMATS = values();
-
         private final int mChannels;
         private final int mColorType;
 
         Format(int chs, int ct) {
             mChannels = chs;
             mColorType = ct;
+            assert mColorType != ColorInfo.CT_UNKNOWN;
         }
 
         /**
@@ -1869,29 +2086,22 @@ public final class Bitmap implements AutoCloseable {
 
         /**
          * The source (in CPU memory) color type of this format.
-         * <p>
-         * RGB is special, it's 3 bytes per pixel in CPU memory, but
-         * 4 bytes per pixel in GPU memory (implicitly).
          *
+         * @hide
+         * @hidden
          * @see #getBytesPerPixel()
          */
+        @ApiStatus.Internal
         @ColorInfo.ColorType
         public int getColorType() {
             return mColorType;
         }
 
+        /**
+         * Returns the number of bytes per pixel.
+         */
         public int getBytesPerPixel() {
-            if (mColorType != ColorInfo.CT_UNKNOWN) {
-                return ColorInfo.bytesPerPixel(mColorType);
-            }
-            return switch (this) {
-                case GRAY_16 -> 2;
-                case GRAY_ALPHA_1616, GRAY_F32 -> 4;
-                case RGB_161616 -> 6;
-                case GRAY_ALPHA_F32 -> 8;
-                case RGB_F32 -> 12;
-                default -> 0;
-            };
+            return ColorInfo.bytesPerPixel(mColorType);
         }
 
         /**
@@ -1907,9 +2117,7 @@ public final class Bitmap implements AutoCloseable {
                      R_8,
                      RG_88,
                      RGBX_8888,
-                     BGRA_8888,
-                     ABGR_8888,
-                     ARGB_8888 -> true;
+                     BGRA_8888 -> true;
                 default -> false;
             };
         }
@@ -1931,35 +2139,17 @@ public final class Bitmap implements AutoCloseable {
         }
 
         /**
-         * Is this format 32-bit per channel and encoded as float?
-         */
-        public boolean isChannelHDR() {
-            return ordinal() >> 2 == 2;
-        }
-
-        /**
          * Does this format have alpha channel?
          */
         public boolean hasAlpha() {
-            if (mColorType != ColorInfo.CT_UNKNOWN) {
-                return (ColorInfo.colorTypeChannelFlags(mColorType) & icyllis.arc3d.core.Color.COLOR_CHANNEL_FLAG_ALPHA) != 0;
-            }
-            return (ordinal() & 1) == 1;
+            return (ColorInfo.colorTypeChannelFlags(mColorType) & icyllis.arc3d.core.Color.COLOR_CHANNEL_FLAG_ALPHA) != 0;
         }
 
         /**
-         * @hidden
+         * Does this format contains only alpha channel?
          */
-        @ApiStatus.Internal
-        @NonNull
-        public static Format get(int chs, boolean u16, boolean hdr) {
-            if (chs < 1 || chs > 4) {
-                throw new IllegalArgumentException();
-            }
-            if (u16 && hdr) {
-                throw new IllegalArgumentException();
-            }
-            return FORMATS[(chs - 1) | (u16 ? 4 : 0) | (hdr ? 8 : 0)];
+        public boolean isAlphaOnly() {
+            return ColorInfo.colorTypeIsAlphaOnly(mColorType);
         }
     }
 
@@ -1973,7 +2163,7 @@ public final class Bitmap implements AutoCloseable {
          * <p>
          * Only supports 8-bit per channel images ({@link Format#isChannelU8()} is true).
          */
-        PNG("*.png"),
+        PNG("*.png", "*.apng"),
 
         /**
          * Save as the TGA format. TGA is lossless and compressed (by default), and {@code quality}
@@ -1981,6 +2171,7 @@ public final class Bitmap implements AutoCloseable {
          * <p>
          * Only supports 8-bit per channel images ({@link Format#isChannelU8()} is true).
          */
+        @Deprecated(forRemoval = true)
         TGA("*.tga", "*.icb", "*.vda", "*.vst"),
 
         /**
@@ -1989,6 +2180,7 @@ public final class Bitmap implements AutoCloseable {
          * <p>
          * Only supports 8-bit per channel images ({@link Format#isChannelU8()} is true).
          */
+        @Deprecated(forRemoval = true)
         BMP("*.bmp", "*.dib"),
 
         /**
@@ -1998,15 +2190,15 @@ public final class Bitmap implements AutoCloseable {
          * <p>
          * Only supports 8-bit per channel images ({@link Format#isChannelU8()} is true).
          */
-        JPEG("*.jpg", "*.jpeg", "*.jpe", "*.jif", "*.jfif", "*.jfi"),
+        JPEG("*.jpeg", "*.jfif", "*.jpg", "*.jpe", "*.jif", "*.jfi"),
 
         /**
-         * Save as the Radiance RGBE format. RGBE allows pixels to have the dynamic range
+         * Save as the Radiance HDR format. HDR allows pixels to have the dynamic range
          * and precision of floating-point values, and {@code quality} is ignored.
          * <p>
          * Only supports 32-bit per channel images ({@link Format#isChannelHDR()} is true).
          */
-        HDR("*.hdr"),
+        HDR("*.hdr", "*.pic", "*.rgbe", "*.xyze"),
 
         /**
          * Save as the raw binary data, this is simply a memory dump.
@@ -2024,7 +2216,7 @@ public final class Bitmap implements AutoCloseable {
         }
 
         // read only formats
-        private static final String[] EXTRA_FILTERS = {"*.psd", "*.gif", "*.pic", "*.pnm", "*.pgm", "*.ppm"};
+        private static final String[] EXTRA_FILTERS = {"*.psd", "*.gif", "*.pnm", "*.pgm", "*.ppm"};
 
         @NonNull
         private final String[] filters;
@@ -2071,7 +2263,7 @@ public final class Bitmap implements AutoCloseable {
                             NULL, width, height, format.getChannels(), data, quality) != 0;
                 }
                 case HDR -> {
-                    if (!format.isChannelHDR()) {
+                    if (format != Format.RGBA_F32) {
                         throw new IOException("Only 32-bit per channel images can be saved as "
                                 + this + ", found " + format);
                     }

@@ -1,19 +1,19 @@
 /*
- * Modern UI.
- * Copyright (C) 2019-2024 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2020-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package icyllis.modernui.graphics.drawable;
@@ -96,7 +96,7 @@ import java.util.Arrays;
  * At a minimum, custom drawable classes must implement the abstract methods on
  * Drawable and should override the {@link Drawable#draw(Canvas)} method to
  * draw content. Significantly, consider overriding the
- * {@link Drawable#setAlpha(int)} to handle alpha correctly.
+ * {@link Drawable#setAlpha(float)} to handle alpha correctly.
  */
 public abstract class Drawable {
 
@@ -112,6 +112,7 @@ public abstract class Drawable {
     private WeakReference<Callback> mCallback = null;
     private boolean mVisible = true;
 
+    @View.ResolvedLayoutDir
     private int mLayoutDirection;
 
     public static final int MAX_LEVEL = 10000;
@@ -408,20 +409,37 @@ public abstract class Drawable {
     /**
      * Specify an alpha value for the drawable. 0 means fully transparent, and
      * 255 means fully opaque.
+     * <p>
+     * As of version 3.13.0, the default implementation of this method
+     * invokes {@link #setAlpha(float)}, subclasses should implement that
+     * method to handle alpha.
      */
+    @ApiStatus.Obsolete
     public void setAlpha(@IntRange(from = 0, to = 255) int alpha) {
+        setAlpha(alpha * (1/255f));
     }
 
     /**
-     * Gets the current alpha value for the drawable. 0 means fully transparent,
-     * 255 means fully opaque. This method is implemented by Drawable subclasses and
-     * the value returned is specific to how that class treats alpha. The default
-     * return value is 255 if the class does not override this method to return a value
-     * specific to its use of alpha.
+     * Specify an alpha value for the drawable. 0.0 means fully transparent, and
+     * 1.0 means fully opaque.
+     *
+     * @since 3.13.0
      */
-    @IntRange(from = 0, to = 255)
-    public int getAlpha() {
-        return 0xFF;
+    public void setAlpha(@FloatRange(from = 0f, to = 1f) float alpha) {
+    }
+
+    /**
+     * Gets the current alpha value for the drawable. 0.0 means fully transparent,
+     * 1.0 means fully opaque. This method is implemented by Drawable subclasses and
+     * the value returned is specific to how that class treats alpha. The default
+     * return value is 1.0 if the class does not override this method to return a value
+     * specific to its use of alpha.
+     * <p>
+     * The method signature was changed in version 3.13.0.
+     */
+    @FloatRange(from = 0f, to = 1f)
+    public float getAlpha() {
+        return 1f;
     }
 
     /**
@@ -443,6 +461,28 @@ public abstract class Drawable {
      * @see #setTintBlendMode(BlendMode)
      */
     public void setTint(@ColorInt int tintColor) {
+        setTintList(ColorStateList.valueOf(tintColor));
+    }
+
+    /**
+     * Specifies tint color for this drawable.
+     * <p>
+     * A Drawable's drawing content will be blended together with its tint
+     * before it is drawn to the screen.
+     * </p>
+     * <p>
+     * To clear the tint, pass {@code null} to
+     * {@link #setTintList(ColorStateList)}.
+     * </p>
+     * <p class="note"><strong>Note:</strong> Setting a color filter via
+     * {@link #setColorFilter(ColorFilter)} overrides tint.
+     * </p>
+     *
+     * @param tintColor Color to use for tinting this drawable
+     * @see #setTintList(ColorStateList)
+     * @see #setTintBlendMode(BlendMode)
+     */
+    public void setTint(@ColorLong long tintColor) {
         setTintList(ColorStateList.valueOf(tintColor));
     }
 
@@ -886,7 +926,7 @@ public abstract class Drawable {
             return null;
         }
 
-        final int color = tint.getColorForState(getState(), Color.TRANSPARENT);
+        final long color = tint.getColorForState(getState(), Color.TRANSPARENT_LONG);
         if (blendFilter != null && blendFilter.getMode() == blendMode &&
                 blendFilter.getColor() == color) {
             return blendFilter;

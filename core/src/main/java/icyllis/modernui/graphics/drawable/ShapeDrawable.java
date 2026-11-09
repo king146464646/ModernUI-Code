@@ -1,24 +1,25 @@
 /*
- * Modern UI.
- * Copyright (C) 2019-2025 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2023-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package icyllis.modernui.graphics.drawable;
 
 import icyllis.modernui.annotation.ColorInt;
+import icyllis.modernui.annotation.ColorLong;
 import icyllis.modernui.annotation.FloatRange;
 import icyllis.modernui.annotation.NonNull;
 import icyllis.modernui.annotation.Nullable;
@@ -89,6 +90,7 @@ public class ShapeDrawable extends Drawable {
      * @param dstAlpha 0..255 no validation
      * @return result alpha
      */
+    @Deprecated
     public static int modulateAlpha(int srcAlpha, int dstAlpha) {
         int multiplier = dstAlpha + (dstAlpha >> 7);
         return srcAlpha * multiplier >> 8;
@@ -117,7 +119,7 @@ public class ShapeDrawable extends Drawable {
 
     final RectF mRect = new RectF();
 
-    private int mAlpha = 0xFF;  // modified by the caller
+    private float mAlpha = 1f;  // modified by the caller
     boolean mMutated;
 
     public ShapeDrawable() {
@@ -136,7 +138,7 @@ public class ShapeDrawable extends Drawable {
 
             mRect.set(getBounds());
 
-            if (mStrokePaint != null && mStrokePaint.getColor() != Color.TRANSPARENT) {
+            if (mStrokePaint != null && mStrokePaint.getColorLong() != Color.TRANSPARENT_LONG) {
                 // the stroke align is center, inset half stroke width to fit in bounds
                 float inset = mStrokePaint.getStrokeWidth() * 0.5f;
                 mRect.inset(inset, inset);
@@ -145,7 +147,7 @@ public class ShapeDrawable extends Drawable {
             updateGradient();
         }
         if (mShapeState.mStrokeWidth > 0) {
-            // fixed by Modern UI: do not skip stroke-only draw
+            // fixed by ModernUI: do not skip stroke-only draw
             return getBounds().isEmpty();
         } else {
             return mRect.isEmpty();
@@ -164,11 +166,11 @@ public class ShapeDrawable extends Drawable {
 
         // remember the alpha values, in case we temporarily overwrite them
         // when we modulate them with mAlpha
-        final int prevFillAlpha = mFillPaint.getAlpha();
-        final int prevStrokeAlpha = mStrokePaint != null ? mStrokePaint.getAlpha() : 0;
+        final float prevFillAlpha = mFillPaint.getAlphaF();
+        final float prevStrokeAlpha = mStrokePaint != null ? mStrokePaint.getAlphaF() : 0;
         // compute the modulate alpha values
-        final int currFillAlpha = modulateAlpha(prevFillAlpha, mAlpha);
-        final int currStrokeAlpha = modulateAlpha(prevStrokeAlpha, mAlpha);
+        final float currFillAlpha = prevFillAlpha * mAlpha;
+        final float currStrokeAlpha = prevStrokeAlpha * mAlpha;
 
         final ShapeState st = mShapeState;
         final ColorFilter colorFilter = mColorFilter != null ? mColorFilter : mBlendModeColorFilter;
@@ -181,16 +183,16 @@ public class ShapeDrawable extends Drawable {
         mFillPaint.setDither(st.mDither);
         mFillPaint.setColorFilter(colorFilter);
         if (colorFilter != null && st.mSolidColors == null) {
-            // Modern UI convention is white alpha
-            mFillPaint.setRGBA(255, 255, 255, mAlpha);
+            // ModernUI convention is white alpha
+            mFillPaint.setColor4f(1f, 1f, 1f, mAlpha);
         }
-        // fixed by Modern UI: also check BlendMode/Shader/ColorFilter to determine there's fill or stroke
+        // fixed by ModernUI: also check BlendMode/Shader/ColorFilter to determine there's fill or stroke
         final boolean haveFill = !mFillPaint.getNativePaint().nothingToDraw();
         final boolean haveStroke;
         final boolean restoreStroke;
         if (mStrokePaint != null &&
                 mStrokePaint.getStrokeWidth() > 0 &&
-                mStrokePaint.getColor() != Color.TRANSPARENT) {
+                mStrokePaint.getColorLong() != Color.TRANSPARENT_LONG) {
             mStrokePaint.setAlpha(currStrokeAlpha);
             // stroke won't use dithering
             mStrokePaint.setColorFilter(colorFilter);
@@ -284,7 +286,7 @@ public class ShapeDrawable extends Drawable {
                         mStrokePaint.setStrokeCap(cap);
                         canvas.drawLine(r.left, y, r.right, y, mStrokePaint);
                     } else {
-                        // Modern UI added, both are the same
+                        // ModernUI added, both are the same
                         canvas.drawLine(r.left, y, r.right, y, cap, r.height(), mFillPaint);
                     }
                 }
@@ -295,7 +297,7 @@ public class ShapeDrawable extends Drawable {
                         mStrokePaint.setStrokeCap(cap);
                         canvas.drawLine(x, r.top, x, r.bottom, mStrokePaint);
                     } else {
-                        // Modern UI added, both are the same
+                        // ModernUI added, both are the same
                         canvas.drawLine(x, r.top, x, r.bottom, cap, r.width(), mFillPaint);
                     }
                 }
@@ -488,6 +490,24 @@ public class ShapeDrawable extends Drawable {
      * @see #getColor
      */
     public void setColor(@ColorInt int color) {
+        long wideColor = Color.pack(color);
+        mShapeState.setSolidColors(ColorStateList.valueOf(wideColor));
+        mFillPaint.setColor(wideColor);
+        invalidateSelf();
+    }
+
+    /**
+     * Changes this drawable to use a single color instead of a gradient.
+     * <p>
+     * <strong>Note</strong>: changing color will affect all instances of a
+     * drawable loaded from a resource. It is recommended to invoke
+     * {@link #mutate()} before changing the color.
+     *
+     * @param color The color used to fill the shape
+     * @see #mutate()
+     * @see #getColor
+     */
+    public void setColor(@ColorLong long color) {
         mShapeState.setSolidColors(ColorStateList.valueOf(color));
         mFillPaint.setColor(color);
         invalidateSelf();
@@ -509,10 +529,10 @@ public class ShapeDrawable extends Drawable {
      */
     public void setColor(@Nullable ColorStateList colorStateList) {
         if (colorStateList == null) {
-            setColor(Color.TRANSPARENT);
+            setColor(Color.TRANSPARENT_LONG);
         } else {
             final int[] stateSet = getState();
-            final int color = colorStateList.getColorForState(stateSet, Color.TRANSPARENT);
+            final long color = colorStateList.getColorForState(stateSet, Color.TRANSPARENT_LONG);
             mShapeState.setSolidColors(colorStateList);
             mFillPaint.setColor(color);
             invalidateSelf();
@@ -544,6 +564,23 @@ public class ShapeDrawable extends Drawable {
      * @see #mutate()
      */
     public void setStroke(int width, @ColorInt int color) {
+        long wideColor = Color.pack(color);
+        mShapeState.setStroke(width, ColorStateList.valueOf(wideColor));
+        setStrokeInternal(width, wideColor);
+    }
+
+    /**
+     * <p>Set the stroke width and color for the drawable. If width is zero,
+     * then no stroke is drawn.</p>
+     * <p><strong>Note</strong>: changing this property will affect all instances
+     * of a drawable loaded from a resource. It is recommended to invoke
+     * {@link #mutate()} before changing this property.</p>
+     *
+     * @param width The width in pixels of the stroke
+     * @param color The color of the stroke
+     * @see #mutate()
+     */
+    public void setStroke(int width, @ColorLong long color) {
         mShapeState.setStroke(width, ColorStateList.valueOf(color));
         setStrokeInternal(width, color);
     }
@@ -561,17 +598,17 @@ public class ShapeDrawable extends Drawable {
      */
     public void setStroke(int width, @Nullable ColorStateList colorStateList) {
         mShapeState.setStroke(width, colorStateList);
-        final int color;
+        final long color;
         if (colorStateList == null) {
-            color = Color.TRANSPARENT;
+            color = Color.TRANSPARENT_LONG;
         } else {
             final int[] stateSet = getState();
-            color = colorStateList.getColorForState(stateSet, Color.TRANSPARENT);
+            color = colorStateList.getColorForState(stateSet, Color.TRANSPARENT_LONG);
         }
         setStrokeInternal(width, color);
     }
 
-    private void setStrokeInternal(int width, int color) {
+    private void setStrokeInternal(int width, long color) {
         if (mStrokePaint == null) {
             mStrokePaint = new Paint();
             mStrokePaint.setStyle(Paint.STROKE);
@@ -681,8 +718,8 @@ public class ShapeDrawable extends Drawable {
         final ShapeState s = mShapeState;
         final ColorStateList solidColors = s.mSolidColors;
         if (solidColors != null) {
-            final int newColor = solidColors.getColorForState(stateSet, Color.TRANSPARENT);
-            final int oldColor = mFillPaint.getColor();
+            final long newColor = solidColors.getColorForState(stateSet, Color.TRANSPARENT_LONG);
+            final long oldColor = mFillPaint.getColorLong();
             if (oldColor != newColor) {
                 mFillPaint.setColor(newColor);
                 invalidateSelf = true;
@@ -693,8 +730,8 @@ public class ShapeDrawable extends Drawable {
         if (strokePaint != null) {
             final ColorStateList strokeColors = s.mStrokeColors;
             if (strokeColors != null) {
-                final int newColor = strokeColors.getColorForState(stateSet, Color.TRANSPARENT);
-                final int oldColor = strokePaint.getColor();
+                final long newColor = strokeColors.getColorForState(stateSet, Color.TRANSPARENT_LONG);
+                final long oldColor = strokePaint.getColorLong();
                 if (oldColor != newColor) {
                     strokePaint.setColor(newColor);
                     mShapeIsDirty = true;
@@ -735,7 +772,7 @@ public class ShapeDrawable extends Drawable {
     }
 
     @Override
-    public void setAlpha(int alpha) {
+    public void setAlpha(float alpha) {
         if (alpha != mAlpha) {
             mAlpha = alpha;
             invalidateSelf();
@@ -743,7 +780,7 @@ public class ShapeDrawable extends Drawable {
     }
 
     @Override
-    public int getAlpha() {
+    public float getAlpha() {
         return mAlpha;
     }
 
@@ -811,13 +848,12 @@ public class ShapeDrawable extends Drawable {
     public void getOutline(@NonNull Outline outline) {
         final ShapeState st = mShapeState;
         final Rect bounds = getBounds();
-        // only report non-zero alpha if shape being drawn has consistent opacity over shape. Must
-        // either not have a stroke, or have same stroke/fill opacity
-        boolean useFillOpacity = st.mOpaqueOverShape && (mShapeState.mStrokeWidth <= 0
-                || mStrokePaint == null
-                || mStrokePaint.getAlpha() == mFillPaint.getAlpha());
+        // only report non-zero alpha if shape being drawn has consistent opacity over shape.
+        //
+        // ModernUI changed: does not need to have no stroke, or have same stroke/fill opacity
+        boolean useFillOpacity = st.mOpaqueOverShape;
         outline.setAlpha(useFillOpacity
-                ? modulateAlpha(mFillPaint.getAlpha(), getAlpha()) / 255.0f
+                ? mFillPaint.getAlphaF() * getAlpha()
                 : 0.0f);
 
         switch (st.mShape) {
@@ -849,7 +885,7 @@ public class ShapeDrawable extends Drawable {
             case HLINE -> {
                 final float halfStrokeWidth = mStrokePaint != null &&
                         mStrokePaint.getStrokeWidth() > 0 &&
-                        mStrokePaint.getColor() != Color.TRANSPARENT ?
+                        mStrokePaint.getColorLong() != Color.TRANSPARENT_LONG ?
                         mStrokePaint.getStrokeWidth() * 0.5f : bounds.height();
                 final float centerY = bounds.centerY();
                 final int top = (int) Math.floor(centerY - halfStrokeWidth);
@@ -859,7 +895,7 @@ public class ShapeDrawable extends Drawable {
             case VLINE -> {
                 final float halfStrokeWidth = mStrokePaint != null &&
                         mStrokePaint.getStrokeWidth() > 0 &&
-                        mStrokePaint.getColor() != Color.TRANSPARENT ?
+                        mStrokePaint.getColorLong() != Color.TRANSPARENT_LONG ?
                         mStrokePaint.getStrokeWidth() * 0.5f : bounds.width();
                 final float centerX = bounds.centerX();
                 final int left = (int) Math.floor(centerX - halfStrokeWidth);
@@ -1042,10 +1078,11 @@ public class ShapeDrawable extends Drawable {
 
         if (state.mSolidColors != null) {
             final int[] currentState = getState();
-            final int stateColor = state.mSolidColors.getColorForState(currentState, 0);
+            final long stateColor = state.mSolidColors.getColorForState(
+                    currentState, Color.TRANSPARENT_LONG);
             mFillPaint.setColor(stateColor);
         } else {
-            mFillPaint.setColor(Color.TRANSPARENT);
+            mFillPaint.setColor4f(0f, 0f, 0f, 0f);
         }
 
         mPadding = state.mPadding;
@@ -1057,8 +1094,8 @@ public class ShapeDrawable extends Drawable {
 
             if (state.mStrokeColors != null) {
                 final int[] currentState = getState();
-                final int strokeStateColor = state.mStrokeColors.getColorForState(
-                        currentState, Color.TRANSPARENT);
+                final long strokeStateColor = state.mStrokeColors.getColorForState(
+                        currentState, Color.TRANSPARENT_LONG);
                 mStrokePaint.setColor(strokeStateColor);
             }
         }

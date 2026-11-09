@@ -1,19 +1,19 @@
 /*
- * Modern UI.
- * Copyright (C) 2024-2025 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2024-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package icyllis.modernui.graphics;
@@ -79,9 +79,17 @@ public class ImageShader extends Shader {
 
     /**
      * Use nearest-neighbour sampling for minification, magnification; no mipmapping.
-     * Also known as point sampling.
+     * <p>
+     * This is a legacy name of {@link #FILTER_NEAREST}.
      */
-    public static final Object FILTER_POINT = SamplingOptions.POINT;
+    public static final Object FILTER_POINT = SamplingOptions.NEAREST;
+
+    /**
+     * Use nearest-neighbour sampling for minification, magnification; no mipmapping.
+     *
+     * @since 3.13
+     */
+    public static final Object FILTER_NEAREST = SamplingOptions.NEAREST;
 
     /**
      * Use linear interpolation for minification, magnification; no mipmapping.
@@ -158,7 +166,7 @@ public class ImageShader extends Shader {
     /**
      * Create a new shader for the given image.
      * <p>
-     * The filter must be one of constants in this class, which are {@link #FILTER_POINT},
+     * The filter must be one of constants in this class, which are {@link #FILTER_NEAREST},
      * {@link #FILTER_LINEAR}, {@link #FILTER_CUBIC_BSPLINE}, {@link #FILTER_MITCHELL},
      * {@link #FILTER_PHOTOSHOP_BICUBIC} and {@link #FILTER_CATMULLROM}.
      * <p>

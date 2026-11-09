@@ -1,19 +1,19 @@
 /*
- * Modern UI.
+ * ModernUI.
  * Copyright (C) 2021-2025 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  *
  * This file incorporates work covered by the following copyright and
  * permission notice:
@@ -186,7 +186,7 @@ public class ScrollView extends FrameLayout {
         ColorStateList tint = null;
         final TypedValue value = new TypedValue();
         if (context.getTheme().resolveAttribute(R.ns, R.attr.colorControlNormal, value, true)) {
-            tint = context.getResources().loadColorStateList(value, context.getTheme());
+            tint = context.getResources().loadColorStateList(value, null, context.getTheme());
         }
         setVerticalScrollBarEnabled(true);
         ShapeDrawable thumb = new ShapeDrawable();
@@ -289,6 +289,7 @@ public class ScrollView extends FrameLayout {
      * @see #getBottomEdgeEffectColor()
      */
     @ColorInt
+    @Deprecated(forRemoval = true)
     public int getTopEdgeEffectColor() {
         return mEdgeGlowTop.getColor();
     }
@@ -303,6 +304,7 @@ public class ScrollView extends FrameLayout {
      * @see #getTopEdgeEffectColor()
      */
     @ColorInt
+    @Deprecated(forRemoval = true)
     public int getBottomEdgeEffectColor() {
         return mEdgeGlowBottom.getColor();
     }
@@ -481,14 +483,35 @@ public class ScrollView extends FrameLayout {
         boolean handled = false;
         if (event.getAction() == KeyEvent.ACTION_DOWN) {
             switch (event.getKeyCode()) {
-                case KeyEvent.KEY_UP -> handled = arrowScroll(View.FOCUS_UP);
-                case KeyEvent.KEY_DOWN -> handled = arrowScroll(View.FOCUS_DOWN);
-                case KeyEvent.KEY_HOME -> handled = fullScroll(View.FOCUS_UP);
-                case KeyEvent.KEY_END -> handled = fullScroll(View.FOCUS_DOWN);
-                case KeyEvent.KEY_SPACE -> handled = pageScroll(event.isShiftPressed() ? View.FOCUS_UP :
-                        View.FOCUS_DOWN);
-                case KeyEvent.KEY_PAGE_UP -> handled = pageScroll(View.FOCUS_UP);
-                case KeyEvent.KEY_PAGE_DOWN -> handled = pageScroll(View.FOCUS_DOWN);
+                case KeyEvent.KEY_UP:
+                    if (KeyEvent.IS_MACOS ? !event.isSuperPressed() : !event.isAltPressed()) {
+                        handled = arrowScroll(View.FOCUS_UP);
+                    } else {
+                        handled = fullScroll(View.FOCUS_UP);
+                    }
+                    break;
+                case KeyEvent.KEY_DOWN:
+                    if (KeyEvent.IS_MACOS ? !event.isSuperPressed() : !event.isAltPressed()) {
+                        handled = arrowScroll(View.FOCUS_DOWN);
+                    } else {
+                        handled = fullScroll(View.FOCUS_DOWN);
+                    }
+                    break;
+                case KeyEvent.KEY_HOME:
+                    handled = fullScroll(View.FOCUS_UP);
+                    break;
+                case KeyEvent.KEY_END:
+                    handled = fullScroll(View.FOCUS_DOWN);
+                    break;
+                case KeyEvent.KEY_SPACE:
+                    pageScroll(event.isShiftPressed() ? View.FOCUS_UP : View.FOCUS_DOWN);
+                    break;
+                case KeyEvent.KEY_PAGE_UP:
+                    handled = pageScroll(View.FOCUS_UP);
+                    break;
+                case KeyEvent.KEY_PAGE_DOWN:
+                    handled = pageScroll(View.FOCUS_DOWN);
+                    break;
             }
         }
 
@@ -618,7 +641,7 @@ public class ScrollView extends FrameLayout {
                 mScroller.computeScrollOffset();
                 mIsBeingDragged = !mScroller.isFinished()/* || !mEdgeGlowBottom.isFinished()
                         || !mEdgeGlowTop.isFinished()*/;
-                // Modern UI: do not intercept if edge effects are not finished
+                // ModernUI: do not intercept if edge effects are not finished
                 // If user clicks too fast, edge effects will not finish, and events will always be intercepted
 
                 // Catch the edge effect if it is active.
@@ -1277,7 +1300,7 @@ public class ScrollView extends FrameLayout {
         }
     }
 
-    // Not used by Modern UI
+    // Not used by ModernUI
     /*
      * Used by consumeFlingInHorizontalStretch() and consumeFlinInVerticalStretch() for
      * consuming deltas from EdgeEffects

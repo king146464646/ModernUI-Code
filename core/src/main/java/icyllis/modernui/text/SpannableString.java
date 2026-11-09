@@ -1,49 +1,49 @@
 /*
- * Modern UI.
- * Copyright (C) 2019-2021 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2019-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package icyllis.modernui.text;
 
 import icyllis.modernui.annotation.NonNull;
+import icyllis.modernui.graphics.text.GetChars;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * This is the class for text whose content is immutable but to which
  * markup objects can be attached and detached.
  */
-public class SpannableString extends SpannableStringInternal implements Spannable, GetChars {
+public non-sealed class SpannableString extends SpannableStringInternal implements Spannable, GetChars {
 
     /**
-     * @param source           source object to copy from
-     * @param ignoreNoCopySpan whether to copy NoCopySpans in the {@code source}
+     * Note: {@link NoCopySpan} will not be copied into this.
+     *
+     * @param source source object to copy from
      */
-    public SpannableString(@NonNull CharSequence source, boolean ignoreNoCopySpan) {
-        super(source, 0, source.length(), ignoreNoCopySpan);
-    }
-
-    public SpannableString(@NonNull CharSequence source, int start, int end, boolean ignoreNoCopySpan) {
-        super(source, start, end, ignoreNoCopySpan);
-    }
-
     public SpannableString(@NonNull CharSequence source) {
-        this(source, false);
+        super(source, 0, source.length());
     }
 
+    /**
+     * Note: {@link NoCopySpan} will not be copied into this.
+     *
+     * @param source source object to copy from
+     */
     public SpannableString(@NonNull CharSequence source, int start, int end) {
-        super(source, start, end, false);
+        super(source, start, end);
     }
 
     @NonNull
@@ -53,6 +53,25 @@ public class SpannableString extends SpannableStringInternal implements Spannabl
         } else {
             return new SpannableString(source);
         }
+    }
+
+    @Override
+    public void setSpan(@NonNull Object span, int start, int end, int flags) {
+        super.setSpan(true, span, start, end, flags, true);
+    }
+
+    @Override
+    public void removeSpan(@NonNull Object span) {
+        super.removeSpan(span, 0);
+    }
+
+    /**
+     * @hidden
+     */
+    @ApiStatus.Internal
+    @Override
+    public void removeSpan(@NonNull Object span, int flags) {
+        super.removeSpan(span, flags);
     }
 
     @NonNull

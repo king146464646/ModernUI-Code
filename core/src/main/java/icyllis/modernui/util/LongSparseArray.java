@@ -1,29 +1,28 @@
 /*
- * Modern UI.
- * Copyright (C) 2019-2022 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2019-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package icyllis.modernui.util;
 
+import icyllis.modernui.annotation.NonNull;
+import icyllis.modernui.annotation.Nullable;
 import it.unimi.dsi.fastutil.longs.LongArrays;
 import it.unimi.dsi.fastutil.objects.ObjectArrays;
 
-import javax.annotation.Nonnull;
-import javax.annotation.Nullable;
-import java.util.Arrays;
 import java.util.Objects;
 
 /**
@@ -105,7 +104,7 @@ public class LongSparseArray<E> implements Cloneable {
      * if no such mapping has been made.
      */
     public E get(long key, E valueIfKeyNotFound) {
-        int i = Arrays.binarySearch(mKeys, 0, mSize, key);
+        int i = ContainerHelpers.binarySearch(mKeys, 0, mSize, key);
 
         if (i < 0 || mValues[i] == DELETED) {
             return valueIfKeyNotFound;
@@ -118,7 +117,7 @@ public class LongSparseArray<E> implements Cloneable {
      * Removes the mapping from the specified key, if there was any.
      */
     public void delete(long key) {
-        int i = Arrays.binarySearch(mKeys, 0, mSize, key);
+        int i = ContainerHelpers.binarySearch(mKeys, 0, mSize, key);
 
         if (i >= 0) {
             if (mValues[i] != DELETED) {
@@ -132,7 +131,7 @@ public class LongSparseArray<E> implements Cloneable {
      * Removes the mapping from the specified key, if there was any, returning the old value.
      */
     public E remove(long key) {
-        int i = Arrays.binarySearch(mKeys, 0, mSize, key);
+        int i = ContainerHelpers.binarySearch(mKeys, 0, mSize, key);
 
         if (i >= 0) {
             if (mValues[i] != DELETED) {
@@ -284,7 +283,7 @@ public class LongSparseArray<E> implements Cloneable {
      */
     @Nullable
     public E put(long key, E value) {
-        int i = Arrays.binarySearch(mKeys, 0, mSize, key);
+        int i = ContainerHelpers.binarySearch(mKeys, 0, mSize, key);
 
         if (i >= 0) {
             E oldValue = (E) mValues[i];
@@ -303,7 +302,7 @@ public class LongSparseArray<E> implements Cloneable {
                 gc();
 
                 // Search again because indices may have changed.
-                i = ~Arrays.binarySearch(mKeys, 0, mSize, key);
+                i = ~ContainerHelpers.binarySearch(mKeys, 0, mSize, key);
             }
 
             mKeys = GrowingArrayUtils.insert(mKeys, mSize, i, key);
@@ -318,7 +317,7 @@ public class LongSparseArray<E> implements Cloneable {
      * equivalent to that of calling {@link #put(long, Object)} on this map once for each mapping
      * from key to value in {@code other}.
      */
-    public void putAll(@Nonnull LongSparseArray<? extends E> other) {
+    public void putAll(@NonNull LongSparseArray<? extends E> other) {
         for (int i = 0, size = other.size(); i < size; i++) {
             put(other.keyAt(i), other.valueAt(i));
         }
@@ -435,7 +434,7 @@ public class LongSparseArray<E> implements Cloneable {
             gc();
         }
 
-        return Arrays.binarySearch(mKeys, 0, mSize, key);
+        return ContainerHelpers.binarySearch(mKeys, 0, mSize, key);
     }
 
     /**

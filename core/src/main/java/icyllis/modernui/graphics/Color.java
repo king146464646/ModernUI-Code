@@ -1,25 +1,29 @@
 /*
- * Modern UI.
- * Copyright (C) 2022-2025 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2022-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  */
 
 package icyllis.modernui.graphics;
 
 import icyllis.arc3d.core.ColorSpace;
+import icyllis.arc3d.core.ColorSpaces;
+import icyllis.arc3d.core.ColorTransform;
+import icyllis.arc3d.core.RGBColorSpace;
 import icyllis.modernui.annotation.ColorInt;
+import icyllis.modernui.annotation.ColorLong;
 import icyllis.modernui.annotation.IntRange;
 import icyllis.modernui.annotation.NonNull;
 import icyllis.modernui.annotation.Nullable;
@@ -37,7 +41,7 @@ import java.util.function.DoubleUnaryOperator;
  * <p>Color int is the most common representation.</p>
  *
  * <p>A color int always defines a color in the sRGB color space using 4 components
- * packed in a single 32 bit integer value:</p>
+ * packed in a single 32-bit integer value:</p>
  *
  * <table summary="Color int definition">
  *     <tr>
@@ -69,10 +73,7 @@ import java.util.function.DoubleUnaryOperator;
  *
  * <p>To easily encode color ints, it is recommended to use the static methods
  * {@link #argb(int, int, int, int)} and {@link #rgb(int, int, int)}. The second
- * method omits the alpha component and assumes the color is opaque (alpha is 255).
- * As a convenience this class also offers methods to encode color ints from components
- * defined in the \([0..1]\) range: {@link #argb(float, float, float, float)} and
- * {@link #rgb(float, float, float)}.</p>
+ * method omits the alpha component and assumes the color is opaque (alpha is 255).</p>
  *
  * <h4>Decoding</h4>
  * <p>The four ARGB components can be individually extracted from a color int
@@ -91,6 +92,57 @@ import java.util.function.DoubleUnaryOperator;
  *     <li>{@link #green(int)} to extract the green component</li>
  *     <li>{@link #blue(int)} to extract the blue component</li>
  * </ul>
+ *
+ * <h3>Color longs</h3>
+ * <p>Color longs are a representation introduced in
+ * version 3.13.0 to store colors in extended range, with more precision than color ints.</p>
+ *
+ * <p>A color long always defines a color using 4 components packed in a single
+ * 64 bit long value. It can be created from various forms, and converted into
+ * extended sRGB nonlinear color space as an intermediate space, using the
+ * relative colorimetric intent to match CSS Color Module Level 4 requirements.
+ *
+ * <p class="note"><b>Component ranges:</b> all components (including alpha)
+ * have a range of \([-65504.0, 65504.0]\).</p>
+ *
+ * <p>The color long encoding relies on half-precision float values (fp16).
+ * Use {@link MathUtil#halfToFloat(short)} and {@link MathUtil#floatToHalf(float)}
+ * to convert between fp32 and fp16.</p>
+ *
+ * <h4>Usage in code</h4>
+ * <p>To avoid confusing color longs with arbitrary long values, it is a
+ * good practice to annotate them with the <code>@ColorLong</code></p>
+ *
+ * <h4>Encoding</h4>
+ *
+ * <p>Given the complex nature of color longs, it is strongly encouraged to use
+ * the various methods provided by this class to encode them.</p>
+ *
+ * <p>The most flexible way to encode a color long is to use the method
+ * {@link #pack(float, float, float, float, ColorSpace)}. This method allows you
+ * to specify three color components (typically RGB), an alpha component and a
+ * color space. To encode sRGB colors, use {@link #pack(float, float, float)}
+ * and {@link #pack(float, float, float, float)} which are the
+ * equivalent of {@link #rgb(int, int, int)} and {@link #argb(int, int, int, int)}
+ * for color ints. If you simply need to convert a color int into a color long,
+ * use {@link #pack(int)}.</p>
+ *
+ * <p>It is also possible to create a color long value by invoking the method
+ * {@link #pack} on a color instance.</p>
+ *
+ * <h4>Decoding</h4>
+ *
+ * <p>This class offers convenience methods to easily extract the components
+ * of a color long:</p>
+ * <ul>
+ *     <li>{@link #alpha(long)} to extract the alpha component</li>
+ *     <li>{@link #red(long)} to extract the red component</li>
+ *     <li>{@link #green(long)} to extract the green component</li>
+ *     <li>{@link #blue(long)} to extract the blue component</li>
+ * </ul>
+ *
+ * <p>The values returned by these methods are in extended sRGB nonlinear
+ * color space.</p>
  *
  * <h3>Color4f</h3>
  * <p>Color4f is a representation of RGBA color values in the sRGB color space,
@@ -117,15 +169,31 @@ public final class Color {
     /**
      * Represents fully transparent Color. May be used to initialize a destination
      * containing a mask or a non-rectangular image.
+     * <p>
+     * The value is same as {@link #TRANSPARENT_LONG}, implicit cast is allowed.
      */
     @ColorInt
     public static final int TRANSPARENT = 0;
+
+    /**
+     * Represents fully transparent Color in any color space.
+     * <p>
+     * The value is same as {@link #TRANSPARENT}, implicit cast is allowed.
+     */
+    @ColorLong
+    public static final long TRANSPARENT_LONG = 0L;
 
     /**
      * Represents fully opaque black.
      */
     @ColorInt
     public static final int BLACK = 0xFF000000;
+
+    /**
+     * Represents fully opaque black in any color space.
+     */
+    @ColorLong
+    public static final long BLACK_LONG = 0x3C00_0000_0000_0000L;
 
     /**
      * Represents fully opaque dark gray.
@@ -155,10 +223,28 @@ public final class Color {
     public static final int WHITE = 0xFFFFFFFF;
 
     /**
+     * Represents fully opaque white (D65 white point).
+     */
+    @ColorLong
+    public static final long WHITE_LONG = 0x3C00_3C00_3C00_3C00L;
+
+    /**
      * Represents fully opaque red.
      */
     @ColorInt
     public static final int RED = 0xFFFF0000;
+
+    /**
+     * Represents fully opaque red in sRGB color space.
+     */
+    @ColorLong
+    public static final long RED_SRGB = 0x3C00_0000_0000_3C00L;
+
+    /**
+     * Represents fully opaque red in Display P3 color space.
+     */
+    @ColorLong
+    public static final long RED_DISPLAY_P3 = 0x3C00_B0CE_B341_3C5FL;
 
     /**
      * Represents fully opaque green. HTML lime is equivalent.
@@ -168,10 +254,34 @@ public final class Color {
     public static final int GREEN = 0xFF00FF00;
 
     /**
+     * Represents fully opaque green in sRGB color space.
+     */
+    @ColorLong
+    public static final long GREEN_SRGB = 0x3C00_0000_3C00_0000L;
+
+    /**
+     * Represents fully opaque green in Display P3 color space.
+     */
+    @ColorLong
+    public static final long GREEN_DISPLAY_P3 = 0x3C00_B4F9_3C13_B818L;
+
+    /**
      * Represents fully opaque blue.
      */
     @ColorInt
     public static final int BLUE = 0xFF0000FF;
+
+    /**
+     * Represents fully opaque blue in sRGB color space.
+     */
+    @ColorLong
+    public static final long BLUE_SRGB = 0X3C00_3C00_0000_000DL;
+
+    /**
+     * Represents fully opaque blue in Display P3 color space.
+     */
+    @ColorLong
+    public static final long BLUE_DISPLAY_P3 = 0X3C00_3C00_0000_000DL;
 
     /**
      * Represents fully opaque yellow.
@@ -180,16 +290,52 @@ public final class Color {
     public static final int YELLOW = 0xFFFFFF00;
 
     /**
+     * Represents fully opaque yellow in sRGB color space.
+     */
+    @ColorLong
+    public static final long YELLOW_SRGB = 0x3C00_0000_3C00_3C00L;
+
+    /**
+     * Represents fully opaque yellow in Display P3 color space.
+     */
+    @ColorLong
+    public static final long YELLOW_DISPLAY_P3 = 0x3C00_B58A_3C00_3C00L;
+
+    /**
      * Represents fully opaque cyan. HTML aqua is equivalent.
      */
     @ColorInt
     public static final int CYAN = 0xFF00FFFF;
 
     /**
+     * Represents fully opaque cyan in sRGB color space.
+     */
+    @ColorLong
+    public static final long CYAN_SRGB = 0x3C00_3C00_3C00_0000L;
+
+    /**
+     * Represents fully opaque cyan in Display P3 color space.
+     */
+    @ColorLong
+    public static final long CYAN_DISPLAY_P3 = 0x3C00_3C09_3C13_B818L;
+
+    /**
      * Represents fully opaque magenta. HTML fuchsia is equivalent.
      */
     @ColorInt
     public static final int MAGENTA = 0xFFFF00FF;
+
+    /**
+     * Represents fully opaque magenta in sRGB color space.
+     */
+    @ColorLong
+    public static final long MAGENTA_SRGB = 0x3C00_3C00_0000_3C00L;
+
+    /**
+     * Represents fully opaque magenta in Display P3 color space.
+     */
+    @ColorLong
+    public static final long MAGENTA_DISPLAY_P3 = 0x3C00_3C23_B341_3C5FL;
 
     private final float comp1;
     private final float comp2;
@@ -199,7 +345,7 @@ public final class Color {
     private final ColorSpace cs;
 
     private Color(float r, float g, float b, float a) {
-        this(r, g, b, a, ColorSpace.get(ColorSpace.Named.SRGB));
+        this(r, g, b, a, ColorSpaces.SRGB);
     }
 
     private Color(float r, float g, float b, float a, @NonNull ColorSpace colorSpace) {
@@ -231,16 +377,6 @@ public final class Color {
     }
 
     /**
-     * Returns the color model of this color.
-     *
-     * @return A non-null {@link ColorSpace.Model}
-     */
-    @NonNull
-    public ColorSpace.Model getModel() {
-        return cs.getModel();
-    }
-
-    /**
      * Indicates whether this color color is in a wide-gamut color space.
      * See {@link ColorSpace#isWideGamut()} for a definition of a wide-gamut
      * color space.
@@ -254,14 +390,14 @@ public final class Color {
     }
 
     /**
-     * Indicates whether this color is in the {@link ColorSpace.Named#SRGB sRGB}
+     * Indicates whether this color is in the {@link ColorSpaces#SRGB sRGB}
      * color space.
      *
      * @return True if this color is in the sRGB color space, false otherwise
      * @see #isWideGamut()
      */
     public boolean isSrgb() {
-        return cs.isSrgb();
+        return cs.isSRGB();
     }
 
     /**
@@ -277,56 +413,87 @@ public final class Color {
     }
 
     /**
+     * Packs this color into a color long, converts this color from its
+     * color space to the extended sRGB nonlinear color space.
+     * The conversion is done using the relative colorimetric intent as specified
+     * by {@link ColorTransform#RELATIVE_COLORIMETRIC}.
+     *
+     * @return A color long
+     */
+    @ColorLong
+    public long pack() {
+        return pack(comp1, comp2, comp3, alpha, cs);
+    }
+
+    /**
      * Converts this color from its color space to the specified color space.
-     * The conversion is done using the default rendering intent as specified
-     * by {@link ColorSpace#connect(ColorSpace, ColorSpace)}.
+     * The conversion is done using the relative colorimetric intent as specified
+     * by {@link ColorTransform#RELATIVE_COLORIMETRIC}.
+     * <p>
+     * This method does not work for extended range colors, except both
+     * src and dst are intrinsically extended. Use {@link #convert(ColorSpace, boolean)}
+     * instead.
      *
      * @param colorSpace The destination color space, cannot be null
      * @return A non-null color instance in the specified color space
      */
     @NonNull
     public Color convert(@NonNull ColorSpace colorSpace) {
-        float[] color = new float[]{
+        return convert(colorSpace, false);
+    }
+
+    /**
+     * Converts this color from its color space to the specified color space.
+     * The conversion is done using the relative colorimetric intent as specified
+     * by {@link ColorTransform#RELATIVE_COLORIMETRIC}.
+     *
+     * @param colorSpace    The destination color space, cannot be null
+     * @param extendedRange Whether to convert in extended range
+     * @return A non-null color instance in the specified color space
+     */
+    @NonNull
+    public Color convert(@NonNull ColorSpace colorSpace, boolean extendedRange) {
+        var transform = new ColorTransform(cs, colorSpace,
+                ColorTransform.RELATIVE_COLORIMETRIC);
+        float[] col = new float[]{
                 comp1, comp2, comp3, comp4
         };
-        ColorSpace.connect(cs, colorSpace).transform(color);
-        return new Color(color[0], color[1], color[2], color[3], alpha, colorSpace);
+        if (extendedRange)
+            transform.transformExtended(col);
+        else
+            transform.transform(col);
+        return new Color(col[0], col[1], col[2],
+                colorSpace.getComponentCount() == 4 ? col[3] : 0,
+                alpha, colorSpace);
     }
 
     /**
      * Converts this color to an ARGB color int. A color int is always in
-     * the {@link ColorSpace.Named#SRGB sRGB} color space. This implies
+     * the {@link ColorSpaces#SRGB sRGB} color space. This implies
      * a color space conversion is applied if needed.
      *
      * @return An ARGB color in the sRGB color space
      */
     @ColorInt
     public int toArgb() {
-        if (cs.isSrgb()) {
-            return ((int) (alpha * 255.0f + 0.5f) << 24) |
-                    ((int) (comp1 * 255.0f + 0.5f) << 16) |
-                    ((int) (comp2 * 255.0f + 0.5f) << 8) |
-                    (int) (comp3 * 255.0f + 0.5f);
-        }
-
-        float[] color = new float[]{
-                comp1, comp2, comp3, comp4
-        };
         // The transformation saturates the output
-        ColorSpace.connect(cs).transform(color);
+        float[] rgb = new ColorTransform(cs,
+                        ColorSpaces.SRGB,
+                        ColorTransform.RELATIVE_COLORIMETRIC)
+                .transform(new float[]{
+                        comp1, comp2, comp3, comp4
+                });
 
-        return ((int) (color[3] * 255.0f + 0.5f) << 24) |
-                ((int) (color[0] * 255.0f + 0.5f) << 16) |
-                ((int) (color[1] * 255.0f + 0.5f) << 8) |
-                (int) (color[2] * 255.0f + 0.5f);
+        return (int) (rgb[0] * 255 + .5f) << 16 |
+               (int) (rgb[1] * 255 + .5f) <<  8 |
+               (int) (rgb[2] * 255 + .5f)       |
+               (int) (MathUtil.pin(alpha, 0.0f, 1.0f) * 255 + .5f) << 24 ;
     }
 
     /**
-     * <p>Returns the value of the red component in the range defined by this
-     * color's color space (see {@link ColorSpace#getMinValue(int)} and
-     * {@link ColorSpace#getMaxValue(int)}).</p>
+     * <p>Returns the value of the red component, no range limit.</p>
      *
-     * <p>If this color's color model is not {@link ColorSpace.Model#RGB RGB},
+     * <p>If this color's color model is not {@link ColorSpace#MODEL_RGB RGB},
      * calling this method is equivalent to <code>getComponent(0)</code>.</p>
      *
      * @see #alpha()
@@ -339,11 +506,9 @@ public final class Color {
     }
 
     /**
-     * <p>Returns the value of the green component in the range defined by this
-     * color's color space (see {@link ColorSpace#getMinValue(int)} and
-     * {@link ColorSpace#getMaxValue(int)}).</p>
+     * <p>Returns the value of the green component, no range limit.</p>
      *
-     * <p>If this color's color model is not {@link ColorSpace.Model#RGB RGB},
+     * <p>If this color's color model is not {@link ColorSpace#MODEL_RGB RGB},
      * calling this method is equivalent to <code>getComponent(1)</code>.</p>
      *
      * @see #alpha()
@@ -356,11 +521,9 @@ public final class Color {
     }
 
     /**
-     * <p>Returns the value of the blue component in the range defined by this
-     * color's color space (see {@link ColorSpace#getMinValue(int)} and
-     * {@link ColorSpace#getMaxValue(int)}).</p>
+     * <p>Returns the value of the blue component, no range limit.</p>
      *
-     * <p>If this color's color model is not {@link ColorSpace.Model#RGB RGB},
+     * <p>If this color's color model is not {@link ColorSpace#MODEL_RGB RGB},
      * calling this method is equivalent to <code>getComponent(2)</code>.</p>
      *
      * @see #alpha()
@@ -373,7 +536,7 @@ public final class Color {
     }
 
     /**
-     * Returns the value of the alpha component in the range \([0..1]\).
+     * Returns the value of the alpha component, no range limit.
      * Calling this method is equivalent to
      * <code>getComponent(getComponentCount() - 1)</code>.
      *
@@ -452,8 +615,7 @@ public final class Color {
      * {@link ColorSpace#getMaxValue(int)}).</p>
      *
      * <p>If the requested component index is {@link #getComponentCount()},
-     * this method returns the alpha component, always in the range
-     * \([0..1]\).</p>
+     * this method returns the alpha component.</p>
      *
      * @throws ArrayIndexOutOfBoundsException If the specified component index
      *                                        is < 0 or >= {@link #getComponentCount()}
@@ -484,20 +646,20 @@ public final class Color {
      *
      * @return A value between 0 (darkest black) and 1 (lightest white)
      * @throws IllegalArgumentException If this color's color space
-     *                                  does not use the {@link ColorSpace.Model#RGB RGB} color model
+     *                                  does not use the {@link ColorSpace#MODEL_RGB RGB} color model
      */
     public float luminance() {
-        if (cs.getModel() != ColorSpace.Model.RGB) {
+        if (cs.getModel() != ColorSpace.MODEL_RGB) {
             throw new IllegalArgumentException("The specified color must be encoded in an RGB " +
                     "color space. The supplied color space is " + cs.getModel());
         }
 
-        DoubleUnaryOperator eotf = ((ColorSpace.Rgb) cs).getEotf();
+        DoubleUnaryOperator eotf = ((RGBColorSpace) cs).getEOTF();
         double r = eotf.applyAsDouble(comp1);
         double g = eotf.applyAsDouble(comp2);
         double b = eotf.applyAsDouble(comp3);
 
-        return MathUtil.pin((float) ((0.2126 * r) + (0.7152 * g) + (0.0722 * b)), 0f, 1f);
+        return (float) ((0.2126 * r) + (0.7152 * g) + (0.0722 * b));
     }
 
     @Override
@@ -558,7 +720,7 @@ public final class Color {
 
     /**
      * Creates a new <code>Color</code> instance from an ARGB color int.
-     * The resulting color is in the {@link ColorSpace.Named#SRGB sRGB}
+     * The resulting color is in the {@link ColorSpaces#SRGB sRGB}
      * color space.
      *
      * @param color The ARGB color int to create a <code>Color</code> from
@@ -566,21 +728,20 @@ public final class Color {
      */
     @NonNull
     public static Color valueOf(@ColorInt int color) {
-        float r = ((color >> 16) & 0xff) / 255.0f;
-        float g = ((color >>  8) & 0xff) / 255.0f;
-        float b = ((color      ) & 0xff) / 255.0f;
-        float a = ((color >> 24) & 0xff) / 255.0f;
+        float r = ((color >> 16) & 0xff) * (1/255.0f);
+        float g = ((color >>  8) & 0xff) * (1/255.0f);
+        float b = ((color      ) & 0xff) * (1/255.0f);
+        float a = (color >>> 24) * (1/255.0f);
         return new Color(r, g, b, a);
     }
 
     /**
-     * Creates a new opaque <code>Color</code> in the {@link ColorSpace.Named#SRGB sRGB}
-     * color space with the specified red, green and blue component values. The component
-     * values must be in the range \([0..1]\).
+     * Creates a new opaque <code>Color</code> in the {@link ColorSpaces#SRGB sRGB}
+     * color space with the specified red, green and blue component values.
      *
-     * @param r The red component of the opaque sRGB color to create, in \([0..1]\)
-     * @param g The green component of the opaque sRGB color to create, in \([0..1]\)
-     * @param b The blue component of the opaque sRGB color to create, in \([0..1]\)
+     * @param r The red component of the opaque sRGB color to create, in extended range
+     * @param g The green component of the opaque sRGB color to create, in extended range
+     * @param b The blue component of the opaque sRGB color to create, in extended range
      * @return A non-null instance of {@link Color}
      */
     @NonNull
@@ -589,24 +750,18 @@ public final class Color {
     }
 
     /**
-     * Creates a new <code>Color</code> in the {@link ColorSpace.Named#SRGB sRGB}
+     * Creates a new <code>Color</code> in the {@link ColorSpaces#SRGB sRGB}
      * color space with the specified red, green, blue and alpha component values.
-     * The component values must be in the range \([0..1]\).
      *
-     * @param r The red component of the sRGB color to create, in \([0..1]\)
-     * @param g The green component of the sRGB color to create, in \([0..1]\)
-     * @param b The blue component of the sRGB color to create, in \([0..1]\)
-     * @param a The alpha component of the sRGB color to create, in \([0..1]\)
+     * @param r The red component of the sRGB color to create, in extended range
+     * @param g The green component of the sRGB color to create, in extended range
+     * @param b The blue component of the sRGB color to create, in extended range
+     * @param a The alpha component of the sRGB color to create, in extended range
      * @return A non-null instance of {@link Color}
      */
     @NonNull
     public static Color valueOf(float r, float g, float b, float a) {
-        return new Color(
-                MathUtil.pin(r, 0.0f, 1.0f),
-                MathUtil.pin(g, 0.0f, 1.0f),
-                MathUtil.pin(b, 0.0f, 1.0f),
-                MathUtil.pin(a, 0.0f, 1.0f)
-        );
+        return new Color(r, g, b, a);
     }
 
     /**
@@ -616,10 +771,10 @@ public final class Color {
      * {@link ColorSpace#getMaxValue(int)}. The values passed to this method
      * must be in the proper range.
      *
-     * @param r The red component of the color to create
-     * @param g The green component of the color to create
-     * @param b The blue component of the color to create
-     * @param a The alpha component of the color to create, in \([0..1]\)
+     * @param r The red component of the color to create, in extended range
+     * @param g The green component of the color to create, in extended range
+     * @param b The blue component of the color to create, in extended range
+     * @param a The alpha component of the color to create, in extended range
      * @param colorSpace The color space of the color to create
      * @return A non-null instance of {@link Color}
      *
@@ -637,10 +792,7 @@ public final class Color {
 
     /**
      * <p>Creates a new <code>Color</code> in the specified color space with the
-     * specified component values. The range of the components is defined by
-     * {@link ColorSpace#getMinValue(int)} and {@link ColorSpace#getMaxValue(int)}.
-     * The values passed to this method must be in the proper range. The alpha
-     * component is always in the range \([0..1]\).</p>
+     * specified component values.</p>
      *
      * <p>The length of the array of components must be at least
      * <code>{@link ColorSpace#getComponentCount()} + 1</code>. The component at index
@@ -668,6 +820,199 @@ public final class Color {
             assert length == 4;
             return new Color(components[0], components[1], components[2], components[3], colorSpace);
         }
+    }
+
+    /**
+     * Returns the red component encoded in the specified color long.
+     * It's non-premultiplied in extended sRGB nonlinear color space.
+     *
+     * @param color The color long whose red channel to extract
+     * @return the red value in extended sRGB nonlinear color space
+     *
+     * @see #green(long)
+     * @see #blue(long)
+     * @see #alpha(long)
+     */
+    public static float red(@ColorLong long color) {
+        return MathUtil.halfToFloat((short) color);
+    }
+
+    /**
+     * Returns the green component encoded in the specified color long.
+     * It's non-premultiplied in extended sRGB nonlinear color space.
+     *
+     * @param color The color long whose green channel to extract
+     * @return the green value in extended sRGB nonlinear color space
+     *
+     * @see #red(long)
+     * @see #blue(long)
+     * @see #alpha(long)
+     */
+    public static float green(@ColorLong long color) {
+        return MathUtil.halfToFloat((short) (color >> 16));
+    }
+
+    /**
+     * Returns the blue component encoded in the specified color long.
+     * It's non-premultiplied in extended sRGB nonlinear color space.
+     *
+     * @param color The color long whose blue channel to extract
+     * @return the blue value in extended sRGB nonlinear color space
+     *
+     * @see #red(long)
+     * @see #green(long)
+     * @see #alpha(long)
+     */
+    public static float blue(@ColorLong long color) {
+        return MathUtil.halfToFloat((short) (color >> 32));
+    }
+
+    /**
+     * Returns the alpha component encoded in the specified color long.
+     *
+     * @param color The color long whose alpha channel to extract
+     * @return the alpha value
+     *
+     * @see #red(long)
+     * @see #green(long)
+     * @see #blue(long)
+     */
+    public static float alpha(@ColorLong long color) {
+        return MathUtil.halfToFloat((short) (color >> 48));
+    }
+
+    /**
+     * Converts the specified ARGB color int to an RGBA color long in the sRGB
+     * color space. See the documentation of this class for a description of
+     * the color long format.
+     *
+     * @param color The ARGB color int to convert to an RGBA color long in sRGB
+     *
+     * @return A color long
+     */
+    @ColorLong
+    public static long pack(@ColorInt int color) {
+        float r = ((color >> 16) & 0xff) * (1/255.0f);
+        float g = ((color >>  8) & 0xff) * (1/255.0f);
+        float b = ((color      ) & 0xff) * (1/255.0f);
+        float a = (color >>> 24) * (1/255.0f);
+        return pack(r, g, b, a);
+    }
+
+    /**
+     * Packs the sRGB color defined by the specified red, green and blue component
+     * values into an RGBA color long in the sRGB color space. The alpha component
+     * is set to 1.0. See the documentation of this class for a description of the
+     * color long format.
+     *
+     * @param red The red component of the sRGB color to create, in extended range
+     * @param green The green component of the sRGB color to create, in extended range
+     * @param blue The blue component of the sRGB color to create, in extended range
+     *
+     * @return A color long
+     */
+    @ColorLong
+    public static long pack(float red, float green, float blue) {
+        return pack(red, green, blue, 1.0f);
+    }
+
+    /**
+     * Packs the sRGB color defined by the specified red, green, blue and alpha
+     * component values into an RGBA color long in the sRGB color space. See the
+     * documentation of this class for a description of the color long format.
+     *
+     * @param red The red component of the sRGB color to create, in extended range
+     * @param green The green component of the sRGB color to create, in extended range
+     * @param blue The blue component of the sRGB color to create, in extended range
+     * @param alpha The alpha component of the sRGB color to create, in \([0..1]\)
+     *
+     * @return A color long
+     */
+    @ColorLong
+    public static long pack(float red, float green, float blue, float alpha) {
+        short r = MathUtil.floatToHalf(red);
+        short g = MathUtil.floatToHalf(green);
+        short b = MathUtil.floatToHalf(blue);
+        short a = MathUtil.floatToHalf(
+                MathUtil.pin(alpha, 0f, 1f)
+        );
+        return  (a & 0xffffL) << 48 |
+                (b & 0xffffL) << 32 |
+                (g & 0xffffL) << 16 |
+                (r & 0xffffL);
+    }
+
+    /**
+     * <p>Packs the 3 component color defined by the specified red, green, blue and
+     * alpha component values into a color long in the specified color space. See the
+     * documentation of this class for a description of the color long format.</p>
+     *
+     * <p>The red, green and blue components are stored in the extended range. Thus,
+     * {@link ColorSpace#getMinValue(int)} and
+     * {@link ColorSpace#getMaxValue(int)} are ignored</p>
+     *
+     * @param red The red component of the color to create, in extended range
+     * @param green The green component of the color to create, in extended range
+     * @param blue The blue component of the color to create, in extended range
+     * @param alpha The alpha component of the color to create, in \([0..1]\)
+     *
+     * @return A color long
+     */
+    @ColorLong
+    public static long pack(float red, float green, float blue, float alpha,
+                            @NonNull ColorSpace colorSpace) {
+        if (colorSpace.isExtendedSRGB()) {
+            return pack(red, green, blue, alpha);
+        }
+
+        // CSS Color Module Level 4 requires relative colorimetric intent,
+        // we can convert all colors to extended sRGB as an intermediate space.
+        float[] col = new ColorTransform(colorSpace, ColorSpaces.EXTENDED_SRGB,
+                        ColorTransform.RELATIVE_COLORIMETRIC)
+                .transformExtended(new float[]{red, green, blue});
+
+        return pack(col[0], col[1], col[2], alpha);
+    }
+
+    /**
+     * Returns a new color with the same color components as the original, but with the
+     * specified alpha value. The alpha value will be clamped to the range [0.0, 1.0].
+     *
+     * @param color the base color to apply the alpha to
+     * @param alpha the new alpha component, where 0.0 is fully transparent and 1.0 is fully opaque
+     * @return a new color instance with the adjusted alpha channel
+     */
+    @ColorLong
+    public static long withAlpha(@ColorLong long color, float alpha) {
+        short a = MathUtil.floatToHalf(
+                MathUtil.pin(alpha, 0f, 1f)
+        );
+        return (color & 0xffffffffffffL) | ((a & 0xffffL) << 48);
+    }
+
+    /**
+     * Converts the specified color long to an ARGB color int. A color int is
+     * always in the {@link ColorSpaces#SRGB sRGB} color space, and
+     * clamped to the range of 0..255 per channel.
+     * <p>
+     * This method narrows the color to 8bpc precision and sRGB gamut; do not
+     * use this method unless you explicitly intend to lose color precision
+     * and wide gamut.
+     *
+     * @param color the RGBA color in the extended sRGB nonlinear color space
+     * @return An ARGB color in the sRGB color space
+     */
+    @ColorInt
+    public static int toArgb(@ColorLong long color) {
+        float r = red(color);
+        float g = green(color);
+        float b = blue(color);
+        float a = alpha(color);
+
+        return (int) (MathUtil.pin(r, 0.0f, 1.0f) * 255 + .5f) << 16 |
+               (int) (MathUtil.pin(g, 0.0f, 1.0f) * 255 + .5f) <<  8 |
+               (int) (MathUtil.pin(b, 0.0f, 1.0f) * 255 + .5f)       |
+               (int) (MathUtil.pin(a, 0.0f, 1.0f) * 255 + .5f) << 24 ;
     }
 
     /**
@@ -733,7 +1078,9 @@ public final class Color {
      * @param red   Red component \([0..1]\) of the color
      * @param green Green component \([0..1]\) of the color
      * @param blue  Blue component \([0..1]\) of the color
+     * @deprecated use extended version {@link #pack(float, float, float, float)}
      */
+    @Deprecated(forRemoval = true)
     @ColorInt
     public static int rgb(float red, float green, float blue) {
         return 0xFF000000 |
@@ -770,7 +1117,9 @@ public final class Color {
      * @param red   Red component \([0..1]\) of the color
      * @param green Green component \([0..1]\) of the color
      * @param blue  Blue component \([0..1]\) of the color
+     * @deprecated use extended version {@link #pack(float, float, float, float)}
      */
+    @Deprecated(forRemoval = true)
     @ColorInt
     public static int argb(float alpha, float red, float green, float blue) {
         return ((int) (alpha * 255.0f + 0.5f) << 24) |
@@ -1046,9 +1395,25 @@ public final class Color {
      * @return a value between 0 (darkest black) and 1 (lightest white)
      */
     public static float luminance(@ColorInt int color) {
-        float r = GammaToLinear(red(color) / 255F);
-        float g = GammaToLinear(green(color) / 255F);
-        float b = GammaToLinear(blue(color) / 255F);
+        float r = GammaToLinear(red(color) * (1/255f));
+        float g = GammaToLinear(green(color) * (1/255f));
+        float b = GammaToLinear(blue(color) * (1/255f));
+
+        return 0.2126f * r + 0.7152f * g + 0.0722f * b;
+    }
+
+    /**
+     * Returns the relative luminance of a color.
+     * <p>
+     * Based on the formula for relative luminance defined in WCAG 2.0,
+     * W3C Recommendation 11 December 2008.
+     *
+     * @return a value between 0 (darkest black) and 1 (lightest white)
+     */
+    public static float luminance(@ColorLong long color) {
+        float r = GammaToLinear(red(color));
+        float g = GammaToLinear(green(color));
+        float b = GammaToLinear(blue(color));
 
         return 0.2126f * r + 0.7152f * g + 0.0722f * b;
     }
@@ -1079,20 +1444,64 @@ public final class Color {
     }
 
     /**
-     * Blends the two colors using premultiplied alpha on CPU side. This is to simulate
-     * the color blending on GPU side, but this is only used for color filtering (tinting).
-     * Do NOT premultiply the src and dst colors with alpha on CPU side. The returned
-     * color is un-premultiplied by alpha. This method will not lose precision,
-     * color components are still 8-bit.
+     * Blends the two colors using the given blend mode, mainly used for filtering colors
+     * (tinting) in advance.
+     * <p>
+     * Both the input colors and result color have non-premultiplied (straight) alpha.
+     * <p>
+     * For better precision, it is recommended to use {@link #blend(BlendMode, long, long, boolean)} instead.
      *
      * @param mode the blend mode that determines blending factors
      * @param src  the source color (straight) to be blended into the destination color
      * @param dst  the destination color (straight) on which the source color is to be blended
-     * @return the color (straight) resulting from the color blending
+     * @return the color int (straight) resulting from the color blending
      */
     @ApiStatus.Internal
     @ColorInt
     public static int blend(@NonNull BlendMode mode, @ColorInt int src, @ColorInt int dst) {
         return mode.getNativeBlendMode().blend(src, dst);
+    }
+
+    /**
+     * Blends the two colors using the given blend mode, mainly used for filtering colors
+     * (tinting) in advance.
+     * <p>
+     * Both the input colors and result color have non-premultiplied (straight) alpha,
+     * in extended sRGB nonlinear space.
+     *
+     * @param mode          the blend mode that determines blending factors
+     * @param src           the source color (straight) to be blended into the destination color
+     * @param dst           the destination color (straight) on which the source color is to be blended
+     * @param inLinearSpace true to blend in linear extended sRGB space, false to blend in extended sRGB space
+     * @return the color long (straight) resulting from the color blending
+     * @since 3.13
+     */
+    @ColorLong
+    public static long blend(@NonNull BlendMode mode, @ColorLong long src, @ColorLong long dst,
+                             boolean inLinearSpace) {
+        float[] srcCol = new float[]{red(src), green(src), blue(src), alpha(src)};
+        float[] dstCol = new float[]{red(dst), green(dst), blue(dst), alpha(dst)};
+        for (int i = 0; i < 3; i++) {
+            dstCol[i] *= dstCol[3];
+        }
+        for (int i = 0; i < 3; i++) {
+            srcCol[i] *= srcCol[3];
+        }
+        if (inLinearSpace) {
+            GammaToLinear(srcCol);
+            GammaToLinear(dstCol);
+        }
+        mode.getNativeBlendMode().apply(srcCol, dstCol, dstCol);
+        float scale = 1.0f / dstCol[3];
+        if (!Float.isFinite(scale)) { // NaN or Inf
+            return TRANSPARENT_LONG;
+        }
+        if (inLinearSpace) {
+            LinearToGamma(dstCol);
+        }
+        for (int i = 0; i < 3; i++) {
+            dstCol[i] *= scale;
+        }
+        return pack(dstCol[0], dstCol[1], dstCol[2], dstCol[3]);
     }
 }

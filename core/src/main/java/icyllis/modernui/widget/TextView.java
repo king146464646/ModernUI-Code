@@ -1,19 +1,19 @@
 /*
- * Modern UI.
- * Copyright (C) 2021-2025 BloCamLimb. All rights reserved.
+ * ModernUI.
+ * Copyright (C) 2021-2026 BloCamLimb. All rights reserved.
  *
- * Modern UI is free software; you can redistribute it and/or
+ * ModernUI is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
  *
- * Modern UI is distributed in the hope that it will be useful,
+ * ModernUI is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Modern UI. If not, see <https://www.gnu.org/licenses/>.
+ * License along with ModernUI. If not, see <https://www.gnu.org/licenses/>.
  *
  * This file incorporates work covered by the following copyright and
  * permission notice:
@@ -37,19 +37,13 @@ package icyllis.modernui.widget;
 
 import icyllis.modernui.ModernUI;
 import icyllis.modernui.R;
-import icyllis.modernui.annotation.AttrRes;
-import icyllis.modernui.annotation.FloatRange;
-import icyllis.modernui.annotation.IntRange;
-import icyllis.modernui.annotation.NonNull;
-import icyllis.modernui.annotation.Nullable;
-import icyllis.modernui.annotation.Px;
-import icyllis.modernui.annotation.StyleRes;
-import icyllis.modernui.annotation.StyleableRes;
+import icyllis.modernui.annotation.*;
 import icyllis.modernui.core.Clipboard;
 import icyllis.modernui.core.Context;
 import icyllis.modernui.core.Core;
 import icyllis.modernui.graphics.BlendMode;
 import icyllis.modernui.graphics.Canvas;
+import icyllis.modernui.graphics.Color;
 import icyllis.modernui.graphics.Paint;
 import icyllis.modernui.graphics.Rect;
 import icyllis.modernui.graphics.drawable.Drawable;
@@ -89,6 +83,7 @@ import it.unimi.dsi.fastutil.floats.FloatArrayList;
 import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap;
 import org.jetbrains.annotations.VisibleForTesting;
 
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -139,7 +134,6 @@ public class TextView extends View implements ViewTreeObserver.OnPreDrawListener
     static final int VERY_WIDE = 1024 * 1024; // XXX should be much larger
 
     private static final InputFilter[] NO_FILTERS = new InputFilter[0];
-    private static final Spanned EMPTY_SPANNED = new SpannedString("");
 
     private static final int CHANGE_WATCHER_PRIORITY = 100;
 
@@ -151,13 +145,15 @@ public class TextView extends View implements ViewTreeObserver.OnPreDrawListener
     private static final int DEFAULT_LINE_BREAK_WORD_STYLE =
             LineBreakConfig.LINE_BREAK_WORD_STYLE_NONE;
 
-    private ColorStateList mTextColor;
-    private ColorStateList mHintTextColor;
-    private ColorStateList mLinkTextColor;
+    private @Nullable ColorStateList mTextColor;
+    private @Nullable ColorStateList mHintTextColor;
+    private @Nullable ColorStateList mLinkTextColor;
 
-    private int mCurTextColor;
+    @ColorLong
+    private long mCurTextColor;
 
-    private int mCurHintTextColor;
+    @ColorLong
+    private long mCurHintTextColor;
 
     private Editable.Factory mEditableFactory = Editable.DEFAULT_FACTORY;
     private Spannable.Factory mSpannableFactory = Spannable.DEFAULT_FACTORY;
@@ -333,13 +329,13 @@ public class TextView extends View implements ViewTreeObserver.OnPreDrawListener
         final Resources.Theme theme = context.getTheme();
         final TypedValue value = new TypedValue();
         if (theme.resolveAttribute(R.ns, R.attr.textColorPrimary, value, true))
-            setTextColor(theme.getResources().loadColorStateList(value, theme));
+            setTextColor(theme.getResources().loadColorStateList(value, null, theme));
         if (theme.resolveAttribute(R.ns, R.attr.textColorHint, value, true))
-            setHintTextColor(theme.getResources().loadColorStateList(value, theme));
+            setHintTextColor(theme.getResources().loadColorStateList(value, null, theme));
         if (theme.resolveAttribute(R.ns, R.attr.textColorHighlight, value, true))
             setHighlightColor(value.data);
         if (theme.resolveAttribute(R.ns, R.attr.textColorLink, value, true))
-            setLinkTextColor(theme.getResources().loadColorStateList(value, theme));
+            setLinkTextColor(theme.getResources().loadColorStateList(value, null, theme));
 
         if (getDefaultEditable()) {
             setText("", BufferType.EDITABLE);
@@ -1656,7 +1652,7 @@ public class TextView extends View implements ViewTreeObserver.OnPreDrawListener
      * @see #setTextColor(ColorStateList)
      * @see #getTextColors()
      */
-    public void setTextColor(int color) {
+    public void setTextColor(@ColorInt int color) {
         mTextColor = ColorStateList.valueOf(color);
         updateTextColors();
     }
@@ -1669,11 +1665,7 @@ public class TextView extends View implements ViewTreeObserver.OnPreDrawListener
      * @see #setHintTextColor(ColorStateList)
      * @see #setLinkTextColor(ColorStateList)
      */
-    public void setTextColor(ColorStateList colors) {
-        if (colors == null) {
-            throw new NullPointerException();
-        }
-
+    public void setTextColor(@Nullable ColorStateList colors) {
         mTextColor = colors;
         updateTextColors();
     }
@@ -1684,6 +1676,7 @@ public class TextView extends View implements ViewTreeObserver.OnPreDrawListener
      * @see #setTextColor(ColorStateList)
      * @see #setTextColor(int)
      */
+    @Nullable
     public final ColorStateList getTextColors() {
         return mTextColor;
     }
@@ -1693,14 +1686,15 @@ public class TextView extends View implements ViewTreeObserver.OnPreDrawListener
      *
      * @return Returns the current text color.
      */
-    public final int getCurrentTextColor() {
+    @ColorLong
+    public final long getCurrentTextColor() {
         return mCurTextColor;
     }
 
     /**
      * Sets the color used to display the selection highlight.
      */
-    public void setHighlightColor(int color) {
+    public void setHighlightColor(@ColorInt int color) {
         if (mHighlightColor != color) {
             mHighlightColor = color;
             invalidate();
@@ -1711,6 +1705,7 @@ public class TextView extends View implements ViewTreeObserver.OnPreDrawListener
      * @return the color used to display the selection highlight
      * @see #setHighlightColor(int)
      */
+    @ColorInt
     public int getHighlightColor() {
         return mHighlightColor;
     }
@@ -1778,7 +1773,7 @@ public class TextView extends View implements ViewTreeObserver.OnPreDrawListener
      * @see #getHintTextColors()
      * @see #setTextColor(int)
      */
-    public final void setHintTextColor(int color) {
+    public final void setHintTextColor(@ColorInt int color) {
         mHintTextColor = ColorStateList.valueOf(color);
         updateTextColors();
     }
@@ -1791,7 +1786,7 @@ public class TextView extends View implements ViewTreeObserver.OnPreDrawListener
      * @see #setTextColor(ColorStateList)
      * @see #setLinkTextColor(ColorStateList)
      */
-    public final void setHintTextColor(ColorStateList colors) {
+    public final void setHintTextColor(@Nullable ColorStateList colors) {
         mHintTextColor = colors;
         updateTextColors();
     }
@@ -1803,6 +1798,7 @@ public class TextView extends View implements ViewTreeObserver.OnPreDrawListener
      * @see #setTextColor(ColorStateList)
      * @see #setLinkTextColor(ColorStateList)
      */
+    @Nullable
     public final ColorStateList getHintTextColors() {
         return mHintTextColor;
     }
@@ -1812,7 +1808,8 @@ public class TextView extends View implements ViewTreeObserver.OnPreDrawListener
      *
      * @return Returns the current hint text color.
      */
-    public final int getCurrentHintTextColor() {
+    @ColorLong
+    public final long getCurrentHintTextColor() {
         return mCurHintTextColor;
     }
 
@@ -1822,7 +1819,7 @@ public class TextView extends View implements ViewTreeObserver.OnPreDrawListener
      * @see #setLinkTextColor(ColorStateList)
      * @see #getLinkTextColors()
      */
-    public final void setLinkTextColor(int color) {
+    public final void setLinkTextColor(@ColorInt int color) {
         mLinkTextColor = ColorStateList.valueOf(color);
         updateTextColors();
     }
@@ -1835,7 +1832,7 @@ public class TextView extends View implements ViewTreeObserver.OnPreDrawListener
      * @see #setTextColor(ColorStateList)
      * @see #setHintTextColor(ColorStateList)
      */
-    public final void setLinkTextColor(ColorStateList colors) {
+    public final void setLinkTextColor(@Nullable ColorStateList colors) {
         mLinkTextColor = colors;
         updateTextColors();
     }
@@ -1846,6 +1843,7 @@ public class TextView extends View implements ViewTreeObserver.OnPreDrawListener
      * @see #setLinkTextColor(ColorStateList)
      * @see #setLinkTextColor(int)
      */
+    @Nullable
     public final ColorStateList getLinkTextColors() {
         return mLinkTextColor;
     }
@@ -2420,7 +2418,7 @@ public class TextView extends View implements ViewTreeObserver.OnPreDrawListener
      */
     public void setText(@NonNull CharSequence text, @NonNull BufferType type) {
         for (InputFilter filter : mFilters) {
-            CharSequence out = filter.filter(text, 0, text.length(), EMPTY_SPANNED, 0, 0);
+            CharSequence out = filter.filter(text, 0, text.length(), SpannedString.EMPTY, 0, 0);
             if (out != null) {
                 text = out;
             }
@@ -2454,7 +2452,7 @@ public class TextView extends View implements ViewTreeObserver.OnPreDrawListener
                                     + "PrecomputedText: " + precomputed.getParams()
                                     + "TextView: " + getTextMetricsParams());
                 case PrecomputedText.Params.NEED_RECOMPUTE:
-                    // Modern UI fixed: Google's bug
+                    // ModernUI fixed: Google's bug
                     text = PrecomputedText.create(precomputed, getTextMetricsParams());
                     break;
                 case PrecomputedText.Params.USABLE:
@@ -2489,7 +2487,7 @@ public class TextView extends View implements ViewTreeObserver.OnPreDrawListener
             }
 
             if (mChangeWatcher == null) {
-                mChangeWatcher = new ChangeWatcher();
+                mChangeWatcher = new ChangeWatcher(this);
             }
 
             sp.setSpan(mChangeWatcher, 0, textLength, Spanned.SPAN_INCLUSIVE_INCLUSIVE
@@ -2908,20 +2906,23 @@ public class TextView extends View implements ViewTreeObserver.OnPreDrawListener
     private void updateTextColors() {
         boolean inval = false;
         final int[] drawableState = getDrawableState();
-        int color = mTextColor.getColorForState(drawableState, 0);
-        if (color != mCurTextColor) {
-            mCurTextColor = color;
-            inval = true;
+        long color;
+        if (mTextColor != null) {
+            color = mTextColor.getColorForState(drawableState, Color.TRANSPARENT_LONG);
+            if (color != mCurTextColor) {
+                mCurTextColor = color;
+                inval = true;
+            }
         }
         if (mLinkTextColor != null) {
-            color = mLinkTextColor.getColorForState(drawableState, 0);
+            color = mLinkTextColor.getColorForState(drawableState, Color.TRANSPARENT_LONG);
             if (color != mTextPaint.linkColor) {
                 mTextPaint.linkColor = color;
                 inval = true;
             }
         }
         if (mHintTextColor != null) {
-            color = mHintTextColor.getColorForState(drawableState, 0);
+            color = mHintTextColor.getColorForState(drawableState, Color.TRANSPARENT_LONG);
             if (color != mCurHintTextColor) {
                 mCurHintTextColor = color;
                 if (mText.length() == 0) {
@@ -2997,7 +2998,7 @@ public class TextView extends View implements ViewTreeObserver.OnPreDrawListener
         if (mMovement != null && (isFocused() || isPressed()) && selStart >= 0) {
             final int selEnd = getSelectionEnd();
             Paint paint = Paint.obtain();
-            paint.setStrokeWidth(Math.max(1, dp(0.75f)));
+            paint.setStrokeWidth(1);
             if (selStart == selEnd) {
                 if (mEditor != null && mEditor.shouldRenderCursor()) {
                     if (mHighlightPathBogus) {
@@ -3008,7 +3009,7 @@ public class TextView extends View implements ViewTreeObserver.OnPreDrawListener
                         mHighlightPathBogus = false;
                     }
 
-                    paint.setColor(mTextPaint.getColor());
+                    paint.setColor(mTextPaint.getColorLong());
                     paint.setStyle(Paint.FILL);
 
                     if (cursorOffsetVertical != 0) canvas.translate(0, cursorOffsetVertical);
@@ -3116,7 +3117,7 @@ public class TextView extends View implements ViewTreeObserver.OnPreDrawListener
             }
         }
 
-        int color = mCurTextColor;
+        long color = mCurTextColor;
 
         if (mLayout == null) {
             assumeLayout();
@@ -3359,7 +3360,7 @@ public class TextView extends View implements ViewTreeObserver.OnPreDrawListener
         }
 
         Layout.Alignment alignment = getLayoutAlignment();
-        // Bug fixed by Modern UI
+        // Bug fixed by ModernUI
         final boolean testDirChange = !bringIntoView && mSingleLine && mLayout != null;
         bringIntoView |= testDirChange && mLayout.getAlignment() != alignment;
         int oldDir = 0;
@@ -3394,11 +3395,11 @@ public class TextView extends View implements ViewTreeObserver.OnPreDrawListener
                         && (!shouldEllipsize || hintBoring.width <= ellipsisWidth)) {
                     if (mSavedHintLayout != null) {
                         mHintLayout = mSavedHintLayout.replaceOrMake(mHint, mTextPaint,
-                                hintWidth, alignment, mSpacingMult, mSpacingAdd,
+                                hintWidth, alignment, mTextDir, mSpacingMult, mSpacingAdd,
                                 hintBoring, mIncludePad);
                     } else {
                         mHintLayout = BoringLayout.make(mHint, mTextPaint,
-                                hintWidth, alignment, mSpacingMult, mSpacingAdd,
+                                hintWidth, alignment, mTextDir, mSpacingMult, mSpacingAdd,
                                 hintBoring, mIncludePad);
                     }
 
@@ -3406,12 +3407,12 @@ public class TextView extends View implements ViewTreeObserver.OnPreDrawListener
                 } else if (shouldEllipsize && hintBoring.width <= hintWidth) {
                     if (mSavedHintLayout != null) {
                         mHintLayout = mSavedHintLayout.replaceOrMake(mHint, mTextPaint,
-                                hintWidth, alignment, mSpacingMult, mSpacingAdd,
+                                hintWidth, alignment, mTextDir, mSpacingMult, mSpacingAdd,
                                 hintBoring, mIncludePad, mEllipsize,
                                 ellipsisWidth);
                     } else {
                         mHintLayout = BoringLayout.make(mHint, mTextPaint,
-                                hintWidth, alignment, mSpacingMult, mSpacingAdd,
+                                hintWidth, alignment, mTextDir, mSpacingMult, mSpacingAdd,
                                 hintBoring, mIncludePad, mEllipsize,
                                 ellipsisWidth);
                     }
@@ -3468,14 +3469,24 @@ public class TextView extends View implements ViewTreeObserver.OnPreDrawListener
                     .setLineSpacing(mSpacingAdd, mSpacingMult)
                     .setIncludePad(mIncludePad)
                     .setFallbackLineSpacing(mUseFallbackLineSpacing)
+                    .setLineBreakConfig(LineBreakConfig.getLineBreakConfig(
+                            mLineBreakStyle, mLineBreakWordStyle))
                     .setEllipsize(mBufferType != BufferType.EDITABLE ? effectiveEllipsize : null)
                     .setEllipsizedWidth(ellipsisWidth);
             result = builder.build();
         } else {
             if (boring == UNKNOWN_BORING) {
-                boring = BoringLayout.isBoring(mTransformed, mTextPaint, mTextDir, mBoring);
-                if (boring != null) {
-                    mBoring = boring;
+                // ModernUI changed:
+                if (mTransformed.length() - 500 > wantWidth) {
+                    // When the width MeasureSpec of the TextView is EXACTLY and the number of
+                    // characters exceeds the pixel width, the layout is unlikely to be boring,
+                    // so avoid the check. With 500 as the threshold.
+                    boring = null;
+                } else {
+                    boring = BoringLayout.isBoring(mTransformed, mTextPaint, mTextDir, mBoring);
+                    if (boring != null) {
+                        mBoring = boring;
+                    }
                 }
             }
 
@@ -3484,11 +3495,11 @@ public class TextView extends View implements ViewTreeObserver.OnPreDrawListener
                         && (effectiveEllipsize == null || boring.width <= ellipsisWidth)) {
                     if (useSaved && mSavedLayout != null) {
                         result = mSavedLayout.replaceOrMake(mTransformed, mTextPaint,
-                                wantWidth, alignment, mSpacingMult, mSpacingAdd,
+                                wantWidth, alignment, mTextDir, mSpacingMult, mSpacingAdd,
                                 boring, mIncludePad);
                     } else {
                         result = BoringLayout.make(mTransformed, mTextPaint,
-                                wantWidth, alignment, mSpacingMult, mSpacingAdd,
+                                wantWidth, alignment, mTextDir, mSpacingMult, mSpacingAdd,
                                 boring, mIncludePad);
                     }
 
@@ -3498,12 +3509,12 @@ public class TextView extends View implements ViewTreeObserver.OnPreDrawListener
                 } else if (shouldEllipsize && boring.width <= wantWidth) {
                     if (useSaved && mSavedLayout != null) {
                         result = mSavedLayout.replaceOrMake(mTransformed, mTextPaint,
-                                wantWidth, alignment, mSpacingMult, mSpacingAdd,
+                                wantWidth, alignment, mTextDir, mSpacingMult, mSpacingAdd,
                                 boring, mIncludePad, effectiveEllipsize,
                                 ellipsisWidth);
                     } else {
                         result = BoringLayout.make(mTransformed, mTextPaint,
-                                wantWidth, alignment, mSpacingMult, mSpacingAdd,
+                                wantWidth, alignment, mTextDir, mSpacingMult, mSpacingAdd,
                                 boring, mIncludePad, effectiveEllipsize,
                                 ellipsisWidth);
                     }
@@ -4261,7 +4272,7 @@ public class TextView extends View implements ViewTreeObserver.OnPreDrawListener
         final int selectionStart = getSelectionStart();
         final int selectionEnd = getSelectionEnd();
 
-        // Fixed by Modern UI
+        // Fixed by ModernUI
         return selectionStart >= 0 && selectionEnd >= 0 && selectionStart != selectionEnd;
     }
 
@@ -4676,7 +4687,12 @@ public class TextView extends View implements ViewTreeObserver.OnPreDrawListener
                 // The LinkMovementMethod which should handle taps on links has not been installed
                 // on non-editable text that support text selection.
                 // We reproduce its behavior here to open links for these.
-                List<ClickableSpan> links = mSpannable.getSpans(getSelectionStart(), getSelectionEnd(),
+                //TODO can we add LinkArrowKeyMovementMethod? so we don't have to add logic here
+                float x = event.getX();
+                float y = event.getY();
+                int offset = getOffsetForPosition(x, y);
+
+                List<ClickableSpan> links = mSpannable.getSpans(offset, offset,
                         ClickableSpan.class);
 
                 if (!links.isEmpty()) {
@@ -4912,7 +4928,7 @@ public class TextView extends View implements ViewTreeObserver.OnPreDrawListener
 
     @Override
     public boolean onKeyShortcut(int keyCode, @NonNull KeyEvent event) {
-        if (event.hasModifiers(KeyEvent.META_CTRL_ON)) {
+        if (event.hasModifiers(KeyEvent.META_SHORTCUT_ON)) {
             // Handle Ctrl-only shortcuts.
             switch (keyCode) {
                 case KeyEvent.KEY_X:
@@ -5410,36 +5426,63 @@ public class TextView extends View implements ViewTreeObserver.OnPreDrawListener
         }
     }
 
-    private class ChangeWatcher implements TextWatcher, SpanWatcher {
+    private static class ChangeWatcher implements TextWatcher, SpanWatcher {
+        // ModernUI changed:
+        // Make this class a static nested class that holds a weak reference to the original TextView.
+        // Also, check the ownership of the text to avoid memory leaks and unexpected behaviors,
+        // similar to what DynamicLayout.ChangeWatcher does.
+        private final WeakReference<TextView> mTextView;
+
+        public ChangeWatcher(TextView textView) {
+            mTextView = new WeakReference<>(textView);
+        }
 
         @Override
         public void onSpanAdded(Spannable text, Object what, int start, int end) {
-            spanChange(text, what, -1, start, -1, end);
+            TextView textView = mTextView.get();
+            if (textView != null && textView.mText == text) {
+                textView.spanChange(text, what, -1, start, -1, end);
+            }
         }
 
         @Override
         public void onSpanRemoved(Spannable text, Object what, int start, int end) {
-            spanChange(text, what, start, -1, end, -1);
+            TextView textView = mTextView.get();
+            if (textView != null && textView.mText == text) {
+                textView.spanChange(text, what, start, -1, end, -1);
+            }
         }
 
         @Override
         public void onSpanChanged(Spannable text, Object what, int ost, int oen, int nst, int nen) {
-            spanChange(text, what, ost, nst, oen, nen);
+            TextView textView = mTextView.get();
+            if (textView != null && textView.mText == text) {
+                textView.spanChange(text, what, ost, nst, oen, nen);
+            }
         }
 
         @Override
         public void beforeTextChanged(CharSequence s, int start, int count, int after) {
-            sendBeforeTextChanged(s, start, count, after);
+            TextView textView = mTextView.get();
+            if (textView != null && textView.mText == s) {
+                textView.sendBeforeTextChanged(s, start, count, after);
+            }
         }
 
         @Override
         public void onTextChanged(CharSequence s, int start, int before, int count) {
-            handleTextChanged(s, start, before, count);
+            TextView textView = mTextView.get();
+            if (textView != null && textView.mText == s) {
+                textView.handleTextChanged(s, start, before, count);
+            }
         }
 
         @Override
         public void afterTextChanged(Editable s) {
-            sendAfterTextChanged(s);
+            TextView textView = mTextView.get();
+            if (textView != null && textView.mText == s) {
+                textView.sendAfterTextChanged(s);
+            }
         }
     }
 }
