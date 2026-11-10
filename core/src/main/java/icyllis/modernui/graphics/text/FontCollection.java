@@ -84,6 +84,7 @@ public class FontCollection {
                 (Emoji.isRegionalIndicatorSymbol(prevCh) && Emoji.isRegionalIndicatorSymbol(ch)) ||
                 ch == Emoji.COMBINING_ENCLOSING_KEYCAP ||
                 Emoji.isTagSpecChar(ch) ||
+                ch == Emoji.CANCEL_TAG ||
                 ch == Emoji.ZERO_WIDTH_JOINER ||
                 prevCh == Emoji.ZERO_WIDTH_JOINER);
     }
@@ -327,6 +328,9 @@ public class FontCollection {
             default -> {
                 if (family.isColorEmojiFont()) {
                     if (Emoji.isEmoji(ch) && Emoji.isEmojiPresentation(ch)) {
+                        return 2;
+                    }
+                    if (Emoji.isTagSpecChar(ch) || ch == Emoji.CANCEL_TAG) {
                         return 2;
                     }
                     if (family.getClosestMatch(FontPaint.NORMAL) instanceof EmojiFont) {
