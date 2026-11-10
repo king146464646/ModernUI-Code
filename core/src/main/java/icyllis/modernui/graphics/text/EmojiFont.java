@@ -69,7 +69,7 @@ public final class EmojiFont implements Font {
         mName = name;
         for (CharSequence key : map.keySet()) {
             for (int i = 0, e = key.length(); i < e; ) {
-                int cp = key.codePointAt(i);
+                int cp = Character.codePointAt(key, i);
                 coverage.add(cp);
                 i += Character.charCount(cp);
             }
