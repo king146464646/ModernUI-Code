@@ -67,6 +67,13 @@ public final class EmojiFont implements Font {
                      int base, Object2IntMap<CharSequence> map, List<String> files,
                      @Nullable Function<String, Image> imageLoader) {
         mName = name;
+        for (CharSequence key : map.keySet()) {
+            for (int i = 0, e = key.length(); i < e; ) {
+                int cp = key.codePointAt(i);
+                coverage.add(cp);
+                i += Character.charCount(cp);
+            }
+        }
         mCoverage = coverage;
         mBaseSize = (float) size / base;
         mBaseAscent = (float) ascent / base;

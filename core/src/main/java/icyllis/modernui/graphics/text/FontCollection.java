@@ -329,7 +329,10 @@ public class FontCollection {
                     if (Emoji.isEmoji(ch) && Emoji.isEmojiPresentation(ch)) {
                         return 2;
                     }
-                    return UNSUPPORTED_FONT_SCORE;
+                    if (family.getClosestMatch(FontPaint.NORMAL) instanceof EmojiFont) {
+                        return UNSUPPORTED_FONT_SCORE;
+                    }
+                    return 1;
                 }
                 return 1;
             }
