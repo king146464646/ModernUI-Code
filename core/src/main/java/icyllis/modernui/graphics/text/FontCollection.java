@@ -325,9 +325,11 @@ public class FontCollection {
             case Emoji.VARIATION_SELECTOR_16 -> colorEmojiRequest = true;
             case Emoji.VARIATION_SELECTOR_15 -> colorEmojiRequest = false;
             default -> {
-                if (family.isColorEmojiFont() &&
-                        Emoji.isEmoji(ch) && !Emoji.isKeycapBase(ch)) {
-                    return 2;
+                if (family.isColorEmojiFont()) {
+                    if (Emoji.isEmoji(ch) && Emoji.isEmojiPresentation(ch)) {
+                        return 2;
+                    }
+                    return UNSUPPORTED_FONT_SCORE;
                 }
                 return 1;
             }
