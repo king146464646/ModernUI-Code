@@ -195,7 +195,7 @@ public class FontCollection {
                     (isStickyWhitelisted(ch) || isCombining(ch))) {
                 // Continue using existing font as long as it has coverage and is whitelisted.
 
-                if (lastFamilies.get(0).isColorEmojiFamily()) {
+                if (lastFamilies.get(0).isColorEmojiFont()) {
                     // If the last family is color emoji font, find the longest family.
                     for (FontFamily family : lastFamilies) {
                         shouldContinueRun |= family.hasGlyph(ch);
@@ -212,7 +212,7 @@ public class FontCollection {
                 if (pos == 0 || lastFamilies == null || lastFamilies.isEmpty()) {
                     breakRun = true;
                 } else {
-                    if (lastFamilies.get(0).isColorEmojiFamily()) {
+                    if (lastFamilies.get(0).isColorEmojiFont()) {
                         List<FontFamily> intersection = new ArrayList<>(families);
                         intersection.retainAll(lastFamilies);
                         if (intersection.isEmpty()) {
