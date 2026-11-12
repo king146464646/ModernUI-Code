@@ -698,6 +698,7 @@ public class ShapedText {
             // optimize for single font
             nativeFont.setTypeface(mFonts[0].getNativeTypeface());
             if (nativeFont.getTypeface() != null) {
+                nativeFont.setSize(mFonts[0].mapFontSize(mPaint.getFontSize()));
                 return TextBlob.makeNoCopy(mGlyphs, mPositions,
                         nativeFont, null);
             } else {
@@ -715,6 +716,7 @@ public class ShapedText {
                 if (lastFont != currFont) {
                     nativeFont.setTypeface(lastFont.getNativeTypeface());
                     if (nativeFont.getTypeface() != null) {
+                        nativeFont.setSize(lastFont.mapFontSize(mPaint.getFontSize()));
                         int runCount = currPos - lastPos;
                         var runBuffer = builder.allocRunPos(
                                 nativeFont, runCount, null

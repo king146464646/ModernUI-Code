@@ -26,9 +26,10 @@ import icyllis.modernui.annotation.Size;
 import icyllis.modernui.graphics.text.Font;
 import icyllis.modernui.graphics.text.FontPaint;
 import icyllis.modernui.graphics.text.LayoutPiece;
-import icyllis.modernui.graphics.text.OutlineFont;
 import icyllis.modernui.graphics.text.ShapedText;
 import icyllis.modernui.view.Gravity;
+import it.unimi.dsi.fastutil.floats.FloatArrayList;
+import it.unimi.dsi.fastutil.ints.IntArrayList;
 import org.intellij.lang.annotations.MagicConstant;
 import org.jetbrains.annotations.ApiStatus;
 import org.slf4j.Marker;
@@ -1391,20 +1392,14 @@ public abstract class Canvas {
         if (text.length == 0) {
             return;
         }
-        if (font instanceof OutlineFont outlineFont) {
-            // inline version of OutlineFont.doSimpleLayout
-            var face = outlineFont.chooseFont(fontPaint);
-            var frc = OutlineFont.getFontRenderContext(fontPaint);
-            var gv = face.createGlyphVector(frc, text);
-            int nGlyphs = gv.getNumGlyphs();
-            drawGlyphs(gv.getGlyphCodes(0, nGlyphs, null),
-                    0,
-                    gv.getGlyphPositions(0, nGlyphs, null),
-                    0,
-                    nGlyphs,
-                    font,
-                    x, y, paint, fontPaint);
-        }
+        IntArrayList glyphs = new IntArrayList();
+        FloatArrayList positions = new FloatArrayList();
+        font.doSimpleLayout(text, 0, text.length, fontPaint, glyphs, positions, 0.0f, 0.0f);
+        drawGlyphs(glyphs.toIntArray(), 0,
+                positions.toFloatArray(), 0,
+                glyphs.size(),
+                font,
+                x, y, paint, fontPaint);
     }
 
     public void drawSimpleText(@NonNull String text, @NonNull Font font,

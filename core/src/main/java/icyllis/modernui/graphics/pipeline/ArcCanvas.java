@@ -341,6 +341,7 @@ public class ArcCanvas extends Canvas {
             return;
         }
         fontPaint.getNativeFont(nativeFont);
+        nativeFont.setSize(font.mapFontSize(fontPaint.getFontSize()));
         mCanvas.drawGlyphs(glyphs, glyphOffset,
                 positions, positionOffset,
                 glyphCount, x, y, nativeFont, paint.getNativePaint());
@@ -500,6 +501,7 @@ public class ArcCanvas extends Canvas {
             if (lastFont != currFont) {
                 nativeFont.setTypeface(lastFont.getNativeTypeface());
                 if (nativeFont.getTypeface() != null) {
+                    nativeFont.setSize(lastFont.mapFontSize(paint.getFontSize()));
                     int runCount = currPos - lastPos;
                     var runBuffer = builder.allocRunPos(
                             nativeFont, runCount, null

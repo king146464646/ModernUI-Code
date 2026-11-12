@@ -24,6 +24,7 @@ import icyllis.modernui.annotation.Nullable;
 import icyllis.modernui.graphics.Canvas;
 import icyllis.modernui.graphics.Paint;
 import icyllis.modernui.graphics.text.CharUtils;
+import icyllis.modernui.graphics.text.Font;
 import icyllis.modernui.graphics.text.FontMetricsInt;
 import icyllis.modernui.graphics.text.GraphemeBreak;
 import icyllis.modernui.graphics.text.LayoutPiece;
@@ -87,8 +88,12 @@ public class TextLine {
 
     private final ArrayList<LayoutPiece> mRasterPieces = new ArrayList<>(0);
     private final FloatArrayList mRasterOffsets = new FloatArrayList(0);
+    private Font mRunFont;
 
     private final ShapedText.RunConsumer mBuildTextBlob = (piece, start, end, isRtl, paint, offsetX) -> {
+        if (mRunFont == null && piece.getGlyphCount() > 0) {
+            mRunFont = piece.getFont(0);
+        }
         icyllis.modernui.graphics.pipeline.ArcCanvas.buildTextBlob(mTextBlobBuilder, piece, offsetX, paint);
         if (piece.hasRasterGlyphs()) {
             mRasterPieces.add(piece);
@@ -1008,6 +1013,7 @@ public class TextLine {
             mCachedFontExtent.reset();
             mRasterPieces.clear();
             mRasterOffsets.clear();
+            mRunFont = null;
             //TODO the complexity of building text blob should be handled by Canvas
             // once TextDisplayList is deployed
             if (mCharsValid) {
@@ -1072,6 +1078,9 @@ public class TextLine {
                 //TODO we assume these values for now, should we extract these values from TrueType file?
                 // Also, TextPaint is not yet synchronized with this
                 float fontSize = wp.getInternalPaint().getFontSize();
+                if (mRunFont != null) {
+                    fontSize = mRunFont.mapFontSize(fontSize);
+                }
                 if ((flags & TextPaint.UNDERLINE_FLAG) != 0) {
                     float thickness = fontSize / 18f;
                     float strokeTop = y + fontSize * (1f / 9f) - thickness * 0.5f + wp.baselineShift;

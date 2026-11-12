@@ -216,6 +216,29 @@ public final class FontFamily {
         mIsColorEmoji = font instanceof EmojiFont;
     }
 
+    private FontFamily(@NonNull Font font, @Nullable Font bold, @Nullable Font italic,
+                       @Nullable Font boldItalic, boolean eastAsian, boolean colorEmoji) {
+        mFont = Objects.requireNonNull(font);
+        mBold = bold;
+        mItalic = italic;
+        mBoldItalic = boldItalic;
+        mIsEastAsian = eastAsian;
+        mIsColorEmoji = colorEmoji;
+    }
+
+    /**
+     * Returns a copy of this family with every style wrapped by the given
+     * mapper, preserving East Asian and color emoji detection.
+     */
+    @NonNull
+    public FontFamily mapFonts(@NonNull Function<Font, Font> mapper) {
+        return new FontFamily(mapper.apply(mFont),
+                mBold != null ? mapper.apply(mBold) : null,
+                mItalic != null ? mapper.apply(mItalic) : null,
+                mBoldItalic != null ? mapper.apply(mBoldItalic) : null,
+                mIsEastAsian, mIsColorEmoji);
+    }
+
     private FontFamily(@NonNull java.awt.Font font, boolean register) {
         if (register) {
             // try lookup in registered fonts, family name is in default locale

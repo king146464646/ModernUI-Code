@@ -66,6 +66,15 @@ public interface Font {
     int getMetrics(@NonNull FontPaint paint,
                    @Nullable FontMetricsInt fm);
 
+    /**
+     * Maps a layout font size to the effective size used when rendering glyphs
+     * of this font. Layout and rendering must use the same value, otherwise
+     * positioned glyphs and their outlines will not match.
+     */
+    default float mapFontSize(float size) {
+        return size;
+    }
+
     @ApiStatus.Internal
     boolean hasGlyph(int ch, int vs);
 
